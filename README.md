@@ -36,10 +36,10 @@ This is being developed in my free time as a fun project. It is no where near be
 - [ ] Meshtastic
 - [ ] Notifcations *(All notifications will go here, from IRC, Gotify, Meshtastic, or anything)* *(Need to add internal speaker support for notification sounds)*
 - [X] Status bar *(Time, Date, Notification icons, Wifi icon, Battery icon with Percent)*
-- Trackball support
-- Serial logging + debug logs stored in memory that can be viewed on the device itself.
-- Allow specifying the IRC server, port, TLS, nick, etc...
-- Proper disconnection & reconnection handling
+- [ ] Trackball support
+- [ ] Serial logging + debug logs stored in memory that can be viewed on the device itself.
+- [ ]Allow specifying the IRC server, port, TLS, nick, etc...
+- [ ] Proper disconnection & reconnection handling
 
 # Contributors
 Join us in **#comms** on **[irc.supernets.org](irc://irc.supernets.org)** if you want to get your hands dirty.
