@@ -38,7 +38,7 @@ This is being developed in my free time as a fun project. It is no where near be
 - [X] Status bar *(Time, Date, Notification icons, Wifi icon, Battery icon with Percent)*
 - [ ] Trackball support
 - [ ] Serial logging + debug logs stored in memory that can be viewed on the device itself.
-- [ ]Allow specifying the IRC server, port, TLS, nick, etc...
+- [ ] Allow specifying the IRC server, port, TLS, nick, etc...
 - [ ] Proper disconnection & reconnection handling
 
 # Contributors
