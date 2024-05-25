@@ -12,6 +12,15 @@ The project started out with as IRC bridge for [Meshtastic](https://meshtastic.o
 
 This is being developed in my free time as a fun project. It is no where near being useful.
 
+# Flashing the Firmware
+1. Add your user to the `dialout` group: `sudo gpasswd -a YOURUSERNAME dialout`
+2. Install [Visual Studio Code](https://code.visualstudio.com/)
+3. Install the [PlatformIO plugin](https://platformio.org/install/ide?install=vscode)
+4. Press F1 and select PlatformIO : Build
+5. Press F1 and select PlatformIO : Upload
+
+**Note:** Your device will likely be `/dev/ttyAMC0` or `/dev/ttyUSB0`. You will also need to re-login after adding your user to the `dialout` group.
+
 # Roapmap
 - [X] IRC Client
 - [ ] ChatGPT
