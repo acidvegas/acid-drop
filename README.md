@@ -13,7 +13,7 @@ The project started out with as IRC bridge for [Meshtastic](https://meshtastic.o
 This is being developed in my free time as a fun project. It is no where near being useful.
 
 # Previews
-![](./.screens/preview1.jpeg) ![](./.screens/preview2.jpeg)
+![](./.screens/preview1.png) ![](./.screens/preview2.png)
 
 # Flashing the Firmware
 1. Add your user to the `dialout` group: `sudo gpasswd -a YOURUSERNAME dialout` *(You will need to re-login after adding your user to the `dialout` group for it to take affect)*
