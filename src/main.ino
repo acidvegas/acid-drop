@@ -2,9 +2,10 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <Wire.h>
-
+#include <Pangodream_18650_CL.h> // POWER MANAGEMENT
 #include <map>
 #include <vector>
+#include <time.h>
 
 #include "boot_screen.h"
 #include "pins.h"
@@ -16,8 +17,13 @@
 #define LINE_SPACING  0
 
 #define INPUT_LINE_HEIGHT (CHAR_HEIGHT + LINE_SPACING)
-#define MAX_LINES ((SCREEN_HEIGHT - INPUT_LINE_HEIGHT) / (CHAR_HEIGHT + LINE_SPACING))
+#define STATUS_BAR_HEIGHT 10
+#define MAX_LINES ((SCREEN_HEIGHT - INPUT_LINE_HEIGHT - STATUS_BAR_HEIGHT) / (CHAR_HEIGHT + LINE_SPACING))
 
+#define BOARD_BAT_ADC 4 // Define the ADC pin used for battery reading
+#define CONV_FACTOR 1.8 // Conversion factor for the ADC to voltage conversion
+#define READS 20        // Number of readings for averaging
+Pangodream_18650_CL BL(BOARD_BAT_ADC, CONV_FACTOR, READS);
 
 TFT_eSPI tft = TFT_eSPI();
 WiFiClientSecure client;
@@ -26,10 +32,9 @@ std::map<String, uint32_t> nickColors;
 std::vector<String> lines;
 String inputBuffer = "";
 
-
 // WiFi credentials
-const char* ssid = "CHANGEME";
-const char* password = "CHANGEME";
+String ssid = "";
+String password = "";
 
 // IRC connection
 const char* server = "irc.supernets.org";
@@ -40,11 +45,24 @@ const char* channel = "#comms";
 // IRC identity
 const char* nick = "ACID_DROP";
 const char* user = "tdeck";
-const char* realname = "ACID DROP Firmware 1.0.0"; // Need to eventually set this up to use a varaible
+const char* realname = "ACID DROP Firmware 1.0.0"; // Need to eventually set this up to use a variable
 
 unsigned long joinChannelTime = 0;
 bool readyToJoinChannel = false;
 
+unsigned long lastStatusUpdateTime = 0;
+const unsigned long STATUS_UPDATE_INTERVAL = 15000;
+
+struct WiFiNetwork {
+    int index;
+    int channel;
+    int rssi;
+    String encryption;
+    String ssid;
+};
+
+std::vector<WiFiNetwork> wifiNetworks;
+int selectedNetworkIndex = 0;
 
 void setup() {
     Serial.begin(115200);
@@ -60,49 +78,57 @@ void setup() {
 
     displayXBM();
     delay(3000);
-    displayCenteredText("CONNECTING TO WIFI");
-    delay(2000);
-    connectToWiFi();
-    displayCenteredText("CONNECTED TO WIFI");
-    delay(2000);
-    displayCenteredText("CONNECTING TO " + String(server));
-    delay(2000);
-    if (connectToIRC()) {
-        displayCenteredText("CONNECTED TO " + String(server));
-        sendIRC("NICK " + String(nick));
-        sendIRC("USER " + String(user) + " 0 * :" + String(realname));
-    } else {
-        displayCenteredText("CONNECTION FAILED"); // Dead point, need to build a reconnect loop possibly
-    }
+    displayCenteredText("SCANNING WIFI");
+    delay(1000);
+    scanWiFiNetworks();
+    displayWiFiNetworks();
 }
-
 
 void loop() {
-    if (client.connected()) {
-        handleIRC();
-    } else {
-        displayCenteredText("RECONNECTING");
-        if (!connectToIRC()) {
-            displayCenteredText("RECONNECT FAILED");
-        } else {
-            displayCenteredText("RECONNECTED");
-            sendIRC("NICK " + String(nick));
-            sendIRC("USER " + String(user) + " 0 * :" + String(realname));
+    if (ssid.isEmpty()) {
+        char incoming = getKeyboardInput();
+        if (incoming != 0) {
+            handleWiFiSelection(incoming);
         }
-        delay(1000);
+    } else {
+        if (millis() - lastStatusUpdateTime > STATUS_UPDATE_INTERVAL) {
+            updateStatusBar();
+            lastStatusUpdateTime = millis();
+        }
+
+        if (client.connected()) {
+            handleIRC();
+        } else {
+            if (WiFi.status() == WL_CONNECTED) {
+                displayCenteredText("CONNECTING TO " + String(server));
+                if (connectToIRC()) {
+                    displayCenteredText("CONNECTED TO " + String(server));
+                    sendIRC("NICK " + String(nick));
+                    sendIRC("USER " + String(user) + " 0 * :" + String(realname));
+                } else {
+                    displayCenteredText("CONNECTION FAILED");
+                    delay(1000);
+                }
+            } else {
+                displayCenteredText("RECONNECTING TO WIFI");
+                WiFi.begin(ssid.c_str(), password.c_str());
+            }
+        }
+
+        if (readyToJoinChannel && millis() >= joinChannelTime) {
+            tft.fillScreen(TFT_BLACK);
+            updateStatusBar();
+            sendIRC("JOIN " + String(channel));
+            readyToJoinChannel = false;
+        }
+
+        char incoming = getKeyboardInput();
+        if (incoming != 0) {
+            handleKeyboardInput(incoming);
+        }
     }
-
-    if (readyToJoinChannel && millis() >= joinChannelTime) {
-        tft.fillScreen(TFT_BLACK);
-        sendIRC("JOIN " + String(channel));
-        readyToJoinChannel = false;
-    }
-
-    char incoming = getKeyboardInput();
-
-    if (incoming != 0)
-        handleKeyboardInput(incoming);
 }
+
 
 
 bool connectToIRC() {
@@ -117,13 +143,15 @@ bool connectToIRC() {
 
 
 void connectToWiFi() {
-    WiFi.begin(ssid, password);
+    WiFi.begin(ssid.c_str(), password.c_str());
 
-    while (WiFi.status() != WL_CONNECTED)
+    while (WiFi.status() != WL_CONNECTED) {
         delay(500);
-
-    //tft.println("\nWiFi Connected!");
-    //tft.printf("IP: %s\n", WiFi.localIP().toString().c_str());
+        displayCenteredText("CONNECTING TO " + ssid);
+    }
+    displayCenteredText("CONNECTED TO " + ssid);
+    delay(1000);
+    updateTimeFromNTP();
 }
 
 
@@ -133,7 +161,6 @@ void sendIRC(String command) {
     else
         Serial.println("Failed to send: " + command);
 }
-
 
 void handleIRC() {
     while (client.available()) {
@@ -164,7 +191,6 @@ void handleIRC() {
         }
     }
 }
-
 
 void parseAndDisplay(String line) {
     int firstSpace = line.indexOf(' ');
@@ -208,7 +234,6 @@ void parseAndDisplay(String line) {
     }
 }
 
-
 void handleKeyboardInput(char key) {
     if (key == '\n' || key == '\r') { // Enter
         sendIRC("PRIVMSG " + String(channel) + " :" + inputBuffer);
@@ -226,7 +251,6 @@ void handleKeyboardInput(char key) {
     }
 }
 
-
 char getKeyboardInput() {
     char incoming = 0;
     Wire.requestFrom(LILYGO_KB_SLAVE_ADDRESS, 1);
@@ -241,7 +265,6 @@ char getKeyboardInput() {
     return 0;
 }
 
-
 void displayXBM() {
     tft.fillScreen(TFT_BLACK);
     int x = (SCREEN_WIDTH - logo_width) / 2;
@@ -249,19 +272,20 @@ void displayXBM() {
     tft.drawXBitmap(x, y, logo_bits, logo_width, logo_height, TFT_GREEN);
 }
 
-
 void displayInputLine() {
-    tft.fillRect(0, SCREEN_HEIGHT - INPUT_LINE_HEIGHT, SCREEN_WIDTH, INPUT_LINE_HEIGHT, TFT_BLACK); // Clear the input line area
+    tft.fillRect(0, SCREEN_HEIGHT - INPUT_LINE_HEIGHT, SCREEN_WIDTH, INPUT_LINE_HEIGHT, TFT_BLACK);
     tft.setCursor(0, SCREEN_HEIGHT - INPUT_LINE_HEIGHT);
-    tft.print("> ");
-    tft.print(inputBuffer);
+    tft.setTextColor(TFT_WHITE);
+    tft.setTextSize(1);
+    tft.print("> " + inputBuffer);
 }
 
-
-uint32_t generateRandomColor() {
-    return tft.color565(random(0, 255), random(0, 255), random(0, 255));
+void displayCenteredText(String text) {
+    tft.fillScreen(TFT_BLACK);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(TFT_GREEN, TFT_BLACK);
+    tft.drawString(text, SCREEN_WIDTH / 2, (SCREEN_HEIGHT + STATUS_BAR_HEIGHT) / 2);
 }
-
 
 void addLine(String nick, String message, String type) {
     if (nickColors.find(nick) == nickColors.end())
@@ -300,10 +324,10 @@ void addLine(String nick, String message, String type) {
     displayLines();
 }
 
-
 void displayLines() {
-    tft.fillScreen(TFT_BLACK);
-    int cursorY = 0;
+    tft.fillRect(0, STATUS_BAR_HEIGHT, SCREEN_WIDTH, SCREEN_HEIGHT - STATUS_BAR_HEIGHT - INPUT_LINE_HEIGHT, TFT_BLACK);
+
+    int cursorY = STATUS_BAR_HEIGHT;
     for (const String& line : lines) {
         tft.setCursor(0, cursorY);
 
@@ -390,7 +414,6 @@ void displayLines() {
     displayInputLine();
 }
 
-
 int renderFormattedMessage(String message, int cursorY, int lineHeight) {
     uint16_t fgColor = TFT_WHITE;
     uint16_t bgColor = TFT_BLACK;
@@ -456,7 +479,6 @@ int renderFormattedMessage(String message, int cursorY, int lineHeight) {
     return cursorY; // Return the new cursor Y position for the next line
 }
 
-
 int calculateLinesRequired(String message) {
     int linesRequired = 1;
     int lineWidth = 0;
@@ -471,7 +493,6 @@ int calculateLinesRequired(String message) {
 
     return linesRequired;
 }
-
 
 uint16_t getColorFromCode(int colorCode) {
     switch (colorCode) {
@@ -495,12 +516,206 @@ uint16_t getColorFromCode(int colorCode) {
     }
 }
 
+uint32_t generateRandomColor() {
+    return tft.color565(random(0, 255), random(0, 255), random(0, 255));
+}
 
-void displayCenteredText(String text) {
-    tft.fillScreen(TFT_BLACK);
-    int16_t x1, y1;
-    uint16_t w, h;
-    tft.setTextDatum(MC_DATUM);
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.drawString(text, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
+void handlePasswordInput(char key) {
+    if (key == '\n' || key == '\r') { // Enter
+        password = inputBuffer;
+        inputBuffer = "";
+        connectToWiFi();
+    } else if (key == '\b') { // Backspace
+        if (inputBuffer.length() > 0) {
+            inputBuffer.remove(inputBuffer.length() - 1);
+            displayPasswordInputLine();
+        }
+    } else {
+        inputBuffer += key;
+        displayPasswordInputLine();
+    }
+}
+
+void displayPasswordInputLine() {
+    tft.fillRect(0, SCREEN_HEIGHT - INPUT_LINE_HEIGHT, SCREEN_WIDTH, INPUT_LINE_HEIGHT, TFT_BLACK);
+    tft.setCursor(0, SCREEN_HEIGHT - INPUT_LINE_HEIGHT);
+    tft.setTextColor(TFT_WHITE);
+    tft.setTextSize(1);
+    tft.print("> " + inputBuffer);
+}
+
+
+
+void updateSelectedNetwork(int delta) {
+    int newIndex = selectedNetworkIndex + delta;
+    if (newIndex >= 0 && newIndex < wifiNetworks.size()) {
+        selectedNetworkIndex = newIndex;
+        displayWiFiNetworks();
+    }
+}
+
+void scanWiFiNetworks() {
+    int n = WiFi.scanNetworks();
+    for (int i = 0; i < n && i < 100; i++) {
+        WiFiNetwork net;
+        net.index = i + 1;
+        net.channel = WiFi.channel(i);
+        net.rssi = WiFi.RSSI(i);
+        net.encryption = (WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? "Open" : "Secured";
+        net.ssid = WiFi.SSID(i);
+        wifiNetworks.push_back(net);
+    }
+}
+
+void displayWiFiNetworks() {
+    tft.fillRect(0, STATUS_BAR_HEIGHT, SCREEN_WIDTH, SCREEN_HEIGHT - STATUS_BAR_HEIGHT, TFT_BLACK);
+    tft.setTextSize(1);
+    tft.setTextColor(TFT_CYAN);
+
+    tft.setCursor(0, STATUS_BAR_HEIGHT);
+    tft.printf("#  CH  RSSI  ENC      SSID\n");
+    tft.setTextColor(TFT_WHITE);
+
+    int maxDisplayedLines = (SCREEN_HEIGHT - STATUS_BAR_HEIGHT - CHAR_HEIGHT) / (CHAR_HEIGHT + LINE_SPACING);
+    int startIdx = selectedNetworkIndex >= maxDisplayedLines ? selectedNetworkIndex - maxDisplayedLines + 1 : 0;
+
+    for (int i = startIdx; i < wifiNetworks.size() && i < startIdx + maxDisplayedLines; ++i) {
+        displayWiFiNetwork(i, i - startIdx + 1); // +1 to account for the header
+    }
+}
+
+
+
+void displayWiFiNetwork(int index, int displayIndex) {
+    int y = STATUS_BAR_HEIGHT + displayIndex * (CHAR_HEIGHT + LINE_SPACING);
+    tft.setCursor(0, y);
+
+    if (index == selectedNetworkIndex) {
+        tft.setTextColor(TFT_GREEN, TFT_BLACK);
+    } else {
+        tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    }
+
+    WiFiNetwork net = wifiNetworks[index];
+    uint16_t rssiColor = getColorFromPercentage((int32_t)net.rssi);
+    tft.printf("%-2d %-3d ", net.index, net.channel);
+
+    tft.setTextColor(rssiColor, TFT_BLACK); // Set RSSI color
+    tft.printf("%-5d ", net.rssi);
+
+    tft.setTextColor(index == selectedNetworkIndex ? TFT_GREEN : TFT_WHITE, TFT_BLACK);
+    tft.printf("%-8s %s", net.encryption.c_str(), net.ssid.c_str());
+}
+
+
+
+void handleWiFiSelection(char key) {
+    if (key == 'u') {
+        updateSelectedNetwork(-1);
+    } else if (key == 'd') {
+        updateSelectedNetwork(1);
+    } else if (key == '\n' || key == '\r') {
+        ssid = wifiNetworks[selectedNetworkIndex].ssid;
+        if (wifiNetworks[selectedNetworkIndex].encryption == "Secured") {
+            inputBuffer = "";
+            tft.fillScreen(TFT_BLACK);
+            tft.setTextSize(1);
+            tft.setTextColor(TFT_WHITE);
+            tft.setCursor(0, STATUS_BAR_HEIGHT);
+            tft.println("ENTER PASSWORD:");
+            displayPasswordInputLine();
+            // Switch to password input mode
+            while (true) {
+                char incoming = getKeyboardInput();
+                if (incoming != 0) {
+                    handlePasswordInput(incoming);
+                    if (incoming == '\n' || incoming == '\r') {
+                        break;
+                    }
+                }
+            }
+        } else {
+            connectToWiFi();
+        }
+    }
+}
+
+void updateStatusBar() {
+    uint16_t darkerGrey = tft.color565(25, 25, 25);
+    tft.fillRect(0, 0, SCREEN_WIDTH, STATUS_BAR_HEIGHT, darkerGrey);
+
+    // Display time
+    struct tm timeinfo;
+    char timeStr[9];
+    if (!getLocalTime(&timeinfo)) {
+        // Default time if NTP sync fails
+        sprintf(timeStr, "12:00 AM");
+    } else {
+        int hour = timeinfo.tm_hour;
+        char ampm[] = "AM";
+        if (hour == 0) {
+            hour = 12;
+        } else if (hour >= 12) {
+            if (hour > 12) {
+                hour -= 12;
+            }
+            strcpy(ampm, "PM");
+        }
+        sprintf(timeStr, "%02d:%02d %s", hour, timeinfo.tm_min, ampm);
+    }
+    tft.setTextDatum(ML_DATUM);
+    tft.setTextColor(TFT_WHITE, darkerGrey);
+    tft.drawString(timeStr, 0, STATUS_BAR_HEIGHT / 2);
+
+    char wifiStr[15];
+    int wifiSignal = 0;
+    if (WiFi.status() != WL_CONNECTED) {
+        sprintf(wifiStr, "WiFi: N/A");
+        tft.setTextColor(TFT_PINK, darkerGrey);
+        tft.setTextDatum(MR_DATUM);
+        tft.drawString(wifiStr, SCREEN_WIDTH - 100, STATUS_BAR_HEIGHT / 2);
+    } else {
+        int32_t rssi = WiFi.RSSI();
+        if (rssi > -50) wifiSignal = 100;
+        else if (rssi > -60) wifiSignal = 80;
+        else if (rssi > -70) wifiSignal = 60;
+        else if (rssi > -80) wifiSignal = 40;
+        else if (rssi > -90) wifiSignal = 20;
+        else wifiSignal = 0;
+
+        sprintf(wifiStr, "WiFi: %d%%", wifiSignal);
+        tft.setTextDatum(MR_DATUM);
+        tft.setTextColor(TFT_PINK, darkerGrey);
+        tft.drawString("WiFi:", SCREEN_WIDTH - 120, STATUS_BAR_HEIGHT / 2);
+        tft.setTextColor(getColorFromPercentage(wifiSignal), darkerGrey);
+        tft.drawString(wifiStr + 6, SCREEN_WIDTH - 100, STATUS_BAR_HEIGHT / 2); // +6 to skip "WiFi: "
+    }
+
+    int batteryLevel = BL.getBatteryChargeLevel();
+    char batteryStr[15];
+    sprintf(batteryStr, "Batt: %d%%", batteryLevel);
+    tft.setTextDatum(MR_DATUM);
+    tft.setTextColor(TFT_CYAN, darkerGrey);
+    tft.drawString("Batt:", SCREEN_WIDTH - 40, STATUS_BAR_HEIGHT / 2);
+    tft.setTextColor(getColorFromPercentage(batteryLevel), darkerGrey);
+    tft.drawString(batteryStr + 5, SCREEN_WIDTH - 5, STATUS_BAR_HEIGHT / 2); // +5 to skip "Batt: "
+}
+
+uint16_t getColorFromPercentage(int rssi) {
+    if (rssi > -50) return TFT_GREEN;
+    else if (rssi > -60) return TFT_YELLOW;
+    else if (rssi > -70) return TFT_ORANGE;
+    else return TFT_RED;
+}
+
+
+void updateTimeFromNTP() {
+    configTime(-5 * 3600, 0, "pool.ntp.org", "time.nist.gov");
+    delay(2000);  // Wait for NTP to sync
+    struct tm timeinfo;
+    if (getLocalTime(&timeinfo)) {
+        Serial.println(&timeinfo, "Time synchronized: %A, %B %d %Y %H:%M:%S");
+    } else {
+        Serial.println("Failed to synchronize time");
+    }
 }
