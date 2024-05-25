@@ -26,6 +26,8 @@ This is being developed in my free time as a fun project. It is no where near be
 **Note:** Your device will likely be `/dev/ttyAMC0` or `/dev/ttyUSB0`
 
 # Roapmap
+- [X] Wifi scanning & selection menu
+- [ ] Saved wifi profiles
 - [X] IRC Client
 - [ ] ChatGPT
 - [ ] SSH Client
