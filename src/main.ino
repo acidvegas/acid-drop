@@ -236,8 +236,13 @@ void parseAndDisplay(String line) {
 
 void handleKeyboardInput(char key) {
     if (key == '\n' || key == '\r') { // Enter
-        sendIRC("PRIVMSG " + String(channel) + " :" + inputBuffer);
-        addLine(nick, inputBuffer, "message");
+        if (inputBuffer.startsWith("/raw ")) {
+            String rawCommand = inputBuffer.substring(5); // Remove "/raw "
+            sendRawCommand(rawCommand);
+        } else {
+            sendIRC("PRIVMSG " + String(channel) + " :" + inputBuffer);
+            addLine(nick, inputBuffer, "message");
+        }
         inputBuffer = "";
         displayInputLine();
     } else if (key == '\b') { // Backspace
@@ -248,6 +253,15 @@ void handleKeyboardInput(char key) {
     } else {
         inputBuffer += key;
         displayInputLine();
+    }
+}
+
+void sendRawCommand(String command) {
+    if (client.connected()) {
+        sendIRC(command);
+        Serial.println("Sent raw command: " + command);
+    } else {
+        Serial.println("Failed to send raw command: Not connected to IRC");
     }
 }
 
