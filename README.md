@@ -8,7 +8,7 @@ This is a custom firmware being developed for the [LilyGo T-Deck](https://www.li
 
 I am terrible at C++ and still am trying to wrap my head around the language's logic, so most of this code has been shit out and written like a cowboy.
 
-The project started out with as IRC bridge for [Meshtastic](https://meshtastic.org/) over MQTT, just so I could say "we have IRC over radio", which later led to me modifying the official Meshtastic [firmware](https://github.com/meshtastic/firmware) to add extended features. I am deep in the rabbit whole of embedded development and am starting from scratch making this an entirely custom firmware.
+The project started out with as IRC bridge for [Meshtastic](https://meshtastic.org/) over MQTT, just so I could say "we have IRC over radio", which later led to me modifying the official Meshtastic [firmware](https://github.com/meshtastic/firmware) to add extended features. I am deep in the rabbit hole of embedded development and am starting from scratch making this an entirely custom firmware.
 
 This is being developed in my free time as a fun project. It is no where near being useful.
 
