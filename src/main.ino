@@ -70,6 +70,10 @@ struct WiFiNetwork {
 std::vector<WiFiNetwork> wifiNetworks;
 int selectedNetworkIndex = 0;
 
+void debugPrint(String message) {
+    Serial.println(message);
+}
+
 void setup() {
     Serial.begin(115200);
     Serial.println("Booting device...");
@@ -81,9 +85,12 @@ void setup() {
     digitalWrite(TFT_BL, HIGH); // Turn on the backlight initially
 
     Wire.begin(BOARD_I2C_SDA, BOARD_I2C_SCL);
+
     tft.begin();
     tft.setRotation(1);
     tft.invertDisplay(1);
+
+    Serial.println("TFT initialized");
 
     displayXBM();
     delay(3000);
@@ -176,6 +183,7 @@ int renderFormattedMessage(String message, int cursorY, int lineHeight, bool hig
 }
 
 void turnOffScreen() {
+    Serial.println("Screen turned off");
     tft.writecommand(TFT_DISPOFF); // Turn off display
     tft.writecommand(TFT_SLPIN);   // Put display into sleep mode
     digitalWrite(TFT_BL, LOW);     // Turn off the backlight (Assuming TFT_BL is the backlight pin)
@@ -183,6 +191,7 @@ void turnOffScreen() {
 }
 
 void turnOnScreen() {
+    Serial.println("Screen turned on");
     digitalWrite(TFT_BL, HIGH);    // Turn on the backlight (Assuming TFT_BL is the backlight pin)
     tft.writecommand(TFT_SLPOUT);  // Wake up display from sleep mode
     tft.writecommand(TFT_DISPON);  // Turn on display
@@ -382,9 +391,8 @@ void loop() {
     }
 }
 
-
-
 bool connectToIRC() {
+    Serial.println("Connecting to IRC...");
     if (useSSL) {
         client.setInsecure();
         return client.connect(server, port);
@@ -396,6 +404,7 @@ bool connectToIRC() {
 
 void connectToWiFi() {
     WiFi.begin(ssid.c_str(), password.c_str());
+    Serial.println("Connecting to WiFi...");
     int attempts = 0;
     while (WiFi.status() != WL_CONNECTED && attempts < 10) { // Try to connect for up to 10 seconds
         delay(500);
@@ -403,6 +412,7 @@ void connectToWiFi() {
         attempts++;
     }
     if (WiFi.status() == WL_CONNECTED) {
+        Serial.println("Connected to WiFi network: " + ssid);
         displayCenteredText("CONNECTED TO " + ssid);
         delay(1000);
         updateTimeFromNTP();
@@ -414,7 +424,7 @@ void connectToWiFi() {
 
 void sendIRC(String command) {
     if (client.println(command))
-        Serial.println(">>> " + command);
+        Serial.println("IRC: >>> " + command);
     else
         Serial.println("Failed to send: " + command);
 }
@@ -423,7 +433,7 @@ void handleIRC() {
     while (client.available()) {
         String line = client.readStringUntil('\n');
         line.trim();
-        Serial.println(line);
+        Serial.println("IRC: " + line);
 
         int firstSpace = line.indexOf(' ');
         int secondSpace = line.indexOf(' ', firstSpace + 1);
@@ -445,7 +455,7 @@ void handleIRC() {
             sendIRC(pingResponse);
         } else {
             parseAndDisplay(line);
-            lastActivityTime = millis();
+            lastActivityTime = millis(); // Reset activity timer
         }
     }
 }
@@ -526,9 +536,6 @@ void handleKeyboardInput(char key) {
         }
     }
 }
-
-
-
 
 void sendRawCommand(String command) {
     if (client.connected()) {
@@ -649,7 +656,10 @@ void updateSelectedNetwork(int delta) {
 }
 
 void scanWiFiNetworks() {
+    Serial.println("Scanning for WiFi networks...");
     int n = WiFi.scanNetworks();
+    Serial.print("Total number of networks found: ");
+    Serial.println(n);
     for (int i = 0; i < n && i < 100; i++) {
         WiFiNetwork net;
         net.index = i + 1;
@@ -731,6 +741,7 @@ void handleWiFiSelection(char key) {
 }
 
 void updateStatusBar() {
+    Serial.println("Updating status bar...");
     uint16_t darkerGrey = tft.color565(25, 25, 25);
     tft.fillRect(0, 0, SCREEN_WIDTH, STATUS_BAR_HEIGHT, darkerGrey);
 
@@ -799,6 +810,7 @@ uint16_t getColorFromPercentage(int rssi) {
 }
 
 void updateTimeFromNTP() {
+    Serial.println("Syncing time with NTP server...");
     configTime(-5 * 3600, 0, "pool.ntp.org", "time.nist.gov");
 
     for (int i = 0; i < 10; ++i) { // Try up to 10 times
