@@ -35,6 +35,10 @@ A compiled "release" will be done once I finish somoe fo the basic features, but
 5. Flash the device: `esptool.py --chip esp32-s3 --port /dev/ttyUSB0 --baud 115200 write_flash -z 0x1000 firmware.bin`
 6. Press the RST *(reset)* button ont he device.
 
+###### Debugging over Serial
+1. Install screen: `apt-get install screen` *(or whatever package manager you use)*
+2. `screen /dev/ttyAMC0 9600`
+
 # Roapmap
 ###### Device functionality
 - [X] Screen timeout on inactivity *(default 30 seconds)*
