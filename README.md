@@ -25,6 +25,7 @@ A compiled "release" will be done once I finish somoe fo the basic features, but
 4. Hold down the trackball on the device, turn it on, and plug it in to the computer.
 5. Press **F1** and select `PlatformIO: Build`
 6. Press **F1** and select `PlatformIO: Upload`
+7. Press the RST *(reset)* button ont he device.
 
 ###### Using ESP Tool
 1. Take the `firmware.bin` file from the release page and download it. *(no releases yet, we still building)*
@@ -32,6 +33,7 @@ A compiled "release" will be done once I finish somoe fo the basic features, but
 3. Hold down the trackball on the device, turn it on, and plug it in to the computer.
 4. Confirm the serial device in your `/dev` directory *(Your device will likely be `/dev/ttyAMC0` or `/dev/ttyUSB0`)*
 5. Flash the device: `esptool.py --chip esp32 --port /dev/ttyUSB0 --baud 115200 write_flash -z 0x1000 firmware.bin`
+6. Press the RST *(reset)* button ont he device.
 
 # Roapmap
 ###### Device functionality
@@ -71,7 +73,6 @@ A compiled "release" will be done once I finish somoe fo the basic features, but
 - Some colors are not working when its only a background color or only contains a space
 - Sometimes it will not connect to IRC even from reconnections, and you have to reboot and try again.
 - Screen timeout can occur during an IRC reconnection and blck keyboard input
-
 
 # Contributors
 Join us in **#comms** on **[irc.supernets.org](irc://irc.supernets.org)** if you want to get your hands dirty.
