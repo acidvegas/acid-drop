@@ -30,6 +30,7 @@ WiFiClientSecure client;
 
 std::map<String, uint32_t> nickColors;
 std::vector<String> lines;
+std::vector<bool> mentions;
 String inputBuffer = "";
 
 // WiFi credentials
@@ -88,6 +89,158 @@ void setup() {
     nick = "ACID_" + String(randomNum);
 }
 
+void displayLines() {
+    tft.fillRect(0, STATUS_BAR_HEIGHT, SCREEN_WIDTH, SCREEN_HEIGHT - STATUS_BAR_HEIGHT - INPUT_LINE_HEIGHT, TFT_BLACK);
+
+    int cursorY = STATUS_BAR_HEIGHT;
+    for (size_t i = 0; i < lines.size(); ++i) {
+        const String& line = lines[i];
+        bool mention = mentions[i];
+        
+        tft.setCursor(0, cursorY);
+
+        if (line.startsWith("JOIN ")) {
+            tft.setTextColor(TFT_GREEN);
+            tft.print("JOIN ");
+            int startIndex = 5;
+            int endIndex = line.indexOf(" has joined ");
+            String senderNick = line.substring(startIndex, endIndex);
+            tft.setTextColor(nickColors[senderNick]);
+            tft.print(senderNick);
+            tft.setTextColor(TFT_WHITE);
+            tft.print(" has joined ");
+            tft.setTextColor(TFT_CYAN);
+            tft.print(channel);
+            cursorY += CHAR_HEIGHT;
+        } else if (line.startsWith("PART ")) {
+            tft.setTextColor(TFT_RED);
+            tft.print("PART ");
+            int startIndex = 5;
+            int endIndex = line.indexOf(" has EMO-QUIT ");
+            String senderNick = line.substring(startIndex, endIndex);
+            tft.setTextColor(nickColors[senderNick]);
+            tft.print(senderNick);
+            tft.setTextColor(TFT_WHITE);
+            tft.print(" has EMO-QUIT ");
+            tft.setTextColor(TFT_CYAN);
+            tft.print(channel);
+            cursorY += CHAR_HEIGHT;
+        } else if (line.startsWith("QUIT ")) {
+            tft.setTextColor(TFT_RED);
+            tft.print("QUIT ");
+            String senderNick = line.substring(5);
+            tft.setTextColor(nickColors[senderNick]);
+            tft.print(senderNick);
+            cursorY += CHAR_HEIGHT;
+        } else if (line.startsWith("NICK ")) {
+            tft.setTextColor(TFT_BLUE);
+            tft.print("NICK ");
+            int startIndex = 5;
+            int endIndex = line.indexOf(" -> ");
+            String oldNick = line.substring(startIndex, endIndex);
+            String newNick = line.substring(endIndex + 4);
+            tft.setTextColor(nickColors[oldNick]);
+            tft.print(oldNick);
+            tft.setTextColor(TFT_WHITE);
+            tft.print(" -> ");
+            tft.setTextColor(nickColors[newNick]);
+            tft.print(newNick);
+            cursorY += CHAR_HEIGHT;
+        } else if (line.startsWith("KICK ")) {
+            tft.setTextColor(TFT_RED);
+            tft.print("KICK ");
+            int startIndex = 5;
+            int endIndex = line.indexOf(" by ");
+            String kickedNick = line.substring(startIndex, endIndex);
+            String kicker = line.substring(endIndex + 4);
+            tft.setTextColor(nickColors[kickedNick]);
+            tft.print(kickedNick);
+            tft.setTextColor(TFT_WHITE);
+            tft.print(" by ");
+            tft.setTextColor(nickColors[kicker]);
+            tft.print(kicker);
+            cursorY += CHAR_HEIGHT;
+        } else if (line.startsWith("MODE ")) {
+            tft.setTextColor(TFT_BLUE);
+            tft.print("MODE ");
+            String modeChange = line.substring(5);
+            tft.setTextColor(TFT_WHITE);
+            tft.print(modeChange);
+            cursorY += CHAR_HEIGHT;
+        } else {
+            int colonPos = line.indexOf(':');
+            String senderNick = line.substring(0, colonPos);
+            String message = line.substring(colonPos + 2);
+
+            tft.setTextColor(nickColors[senderNick]);
+            tft.print(senderNick + ": ");
+            tft.setTextColor(TFT_WHITE);
+
+            // Check if the message contains the nick and highlight it
+            int nickPos = message.indexOf(nick);
+            if (mention && nickPos != -1) {
+                // Print part before the nick
+                tft.print(message.substring(0, nickPos));
+                // Print the nick in yellow
+                tft.setTextColor(TFT_YELLOW);
+                tft.print(nick);
+                // Print the part after the nick
+                tft.setTextColor(TFT_WHITE);
+                tft.print(message.substring(nickPos + nick.length()));
+                cursorY += CHAR_HEIGHT; // Ensure cursor moves to the next line after the highlighted message
+            } else {
+                cursorY = renderFormattedMessage(message, cursorY, CHAR_HEIGHT);
+            }
+        }
+    }
+
+    displayInputLine();
+}
+
+
+
+
+
+void addLine(String senderNick, String message, String type, bool mention = false) {
+    if (nickColors.find(senderNick) == nickColors.end())
+        nickColors[senderNick] = generateRandomColor();
+
+    String formattedMessage;
+    if (type == "join") {
+        formattedMessage = "JOIN " + senderNick + " has joined " + String(channel);
+    } else if (type == "part") {
+        formattedMessage = "PART " + senderNick + " has EMO-QUIT " + String(channel);
+    } else if (type == "quit") {
+        formattedMessage = "QUIT " + senderNick;
+    } else if (type == "nick") {
+        int arrowPos = message.indexOf(" -> ");
+        String oldNick = senderNick;
+        String newNick = message.substring(arrowPos + 4);
+        if (nickColors.find(newNick) == nickColors.end()) {
+            nickColors[newNick] = generateRandomColor();
+        }
+        formattedMessage = "NICK " + oldNick + " -> " + newNick;
+    } else if (type == "kick") {
+        formattedMessage = "KICK " + senderNick + message;
+    } else if (type == "mode") {
+        formattedMessage = "MODE " + message;
+    } else {
+        formattedMessage = senderNick + ": " + message;
+    }
+
+    int linesRequired = calculateLinesRequired(formattedMessage);
+
+    while (lines.size() + linesRequired > MAX_LINES) {
+        lines.erase(lines.begin());
+        mentions.erase(mentions.begin());
+    }
+
+    lines.push_back(formattedMessage);
+    mentions.push_back(mention);
+
+    displayLines();
+}
+
 void loop() {
     if (ssid.isEmpty()) {
         char incoming = getKeyboardInput();
@@ -133,8 +286,6 @@ void loop() {
     }
 }
 
-
-
 bool connectToIRC() {
     if (useSSL) {
         client.setInsecure();
@@ -144,7 +295,6 @@ bool connectToIRC() {
         return nonSecureClient.connect(server, port);
     }
 }
-
 
 void connectToWiFi() {
     WiFi.begin(ssid.c_str(), password.c_str());
@@ -157,7 +307,6 @@ void connectToWiFi() {
     delay(1000);
     updateTimeFromNTP();
 }
-
 
 void sendIRC(String command) {
     if (client.println(command))
@@ -209,18 +358,19 @@ void parseAndDisplay(String line) {
             if (target == String(channel)) {
                 int colonPos = line.indexOf(':', thirdSpace);
                 String message = line.substring(colonPos + 1);
-                String nick = line.substring(1, line.indexOf('!'));
-                addLine(nick, message, "message");
+                String senderNick = line.substring(1, line.indexOf('!'));
+                bool mention = message.indexOf(nick) != -1;
+                addLine(senderNick, message, "message", mention);
             }
         } else if (command == "JOIN" && line.indexOf(channel) != -1) {
-            String nick = line.substring(1, line.indexOf('!'));
-            addLine(nick, " has joined " + String(channel), "join");
+            String senderNick = line.substring(1, line.indexOf('!'));
+            addLine(senderNick, " has joined " + String(channel), "join");
         } else if (command == "PART" && line.indexOf(channel) != -1) {
-            String nick = line.substring(1, line.indexOf('!'));
-            addLine(nick, " has EMO-QUIT " + String(channel), "part");
+            String senderNick = line.substring(1, line.indexOf('!'));
+            addLine(senderNick, " has EMO-QUIT " + String(channel), "part");
         } else if (command == "QUIT" && line.indexOf(channel) != -1) {
-            String nick = line.substring(1, line.indexOf('!'));
-            addLine(nick, "", "quit");
+            String senderNick = line.substring(1, line.indexOf('!'));
+            addLine(senderNick, "", "quit");
         } else if (command == "NICK") {
             String oldNick = line.substring(1, line.indexOf('!'));
             String newNick = line.substring(line.lastIndexOf(':') + 1);
@@ -305,133 +455,6 @@ void displayCenteredText(String text) {
     tft.drawString(text, SCREEN_WIDTH / 2, (SCREEN_HEIGHT + STATUS_BAR_HEIGHT) / 2);
 }
 
-void addLine(String nick, String message, String type) {
-    if (nickColors.find(nick) == nickColors.end())
-        nickColors[nick] = generateRandomColor();
-
-    String formattedMessage;
-    if (type == "join") {
-        formattedMessage = "JOIN " + nick + " has joined " + String(channel);
-    } else if (type == "part") {
-        formattedMessage = "PART " + nick + " has EMO-QUIT " + String(channel);
-    } else if (type == "quit") {
-        formattedMessage = "QUIT " + nick;
-    } else if (type == "nick") {
-        int arrowPos = message.indexOf(" -> ");
-        String oldNick = nick;
-        String newNick = message.substring(arrowPos + 4);
-        if (nickColors.find(newNick) == nickColors.end()) {
-            nickColors[newNick] = generateRandomColor();
-        }
-        formattedMessage = "NICK " + oldNick + " -> " + newNick;
-    } else if (type == "kick") {
-        formattedMessage = "KICK " + nick + message;
-    } else if (type == "mode") {
-        formattedMessage = "MODE " + message;
-    } else {
-        formattedMessage = nick + ": " + message;
-    }
-
-    int linesRequired = calculateLinesRequired(formattedMessage);
-
-    while (lines.size() + linesRequired > MAX_LINES)
-        lines.erase(lines.begin());
-
-    lines.push_back(formattedMessage);
-
-    displayLines();
-}
-
-void displayLines() {
-    tft.fillRect(0, STATUS_BAR_HEIGHT, SCREEN_WIDTH, SCREEN_HEIGHT - STATUS_BAR_HEIGHT - INPUT_LINE_HEIGHT, TFT_BLACK);
-
-    int cursorY = STATUS_BAR_HEIGHT;
-    for (const String& line : lines) {
-        tft.setCursor(0, cursorY);
-
-        if (line.startsWith("JOIN ")) {
-            tft.setTextColor(TFT_GREEN);
-            tft.print("JOIN ");
-            int startIndex = 5;
-            int endIndex = line.indexOf(" has joined ");
-            String nick = line.substring(startIndex, endIndex);
-            tft.setTextColor(nickColors[nick]);
-            tft.print(nick);
-            tft.setTextColor(TFT_WHITE);
-            tft.print(" has joined ");
-            tft.setTextColor(TFT_CYAN);
-            tft.print(channel);
-            cursorY += CHAR_HEIGHT;
-        } else if (line.startsWith("PART ")) {
-            tft.setTextColor(TFT_RED);
-            tft.print("PART ");
-            int startIndex = 5;
-            int endIndex = line.indexOf(" has EMO-QUIT ");
-            String nick = line.substring(startIndex, endIndex);
-            tft.setTextColor(nickColors[nick]);
-            tft.print(nick);
-            tft.setTextColor(TFT_WHITE);
-            tft.print(" has EMO-QUIT ");
-            tft.setTextColor(TFT_CYAN);
-            tft.print(channel);
-            cursorY += CHAR_HEIGHT;
-        } else if (line.startsWith("QUIT ")) {
-            tft.setTextColor(TFT_RED);
-            tft.print("QUIT ");
-            String nick = line.substring(5);
-            tft.setTextColor(nickColors[nick]);
-            tft.print(nick);
-            cursorY += CHAR_HEIGHT;
-        } else if (line.startsWith("NICK ")) {
-            tft.setTextColor(TFT_BLUE);
-            tft.print("NICK ");
-            int startIndex = 5;
-            int endIndex = line.indexOf(" -> ");
-            String oldNick = line.substring(startIndex, endIndex);
-            String newNick = line.substring(endIndex + 4);
-            tft.setTextColor(nickColors[oldNick]);
-            tft.print(oldNick);
-            tft.setTextColor(TFT_WHITE);
-            tft.print(" -> ");
-            tft.setTextColor(nickColors[newNick]);
-            tft.print(newNick);
-            cursorY += CHAR_HEIGHT;
-        } else if (line.startsWith("KICK ")) {
-            tft.setTextColor(TFT_RED);
-            tft.print("KICK ");
-            int startIndex = 5;
-            int endIndex = line.indexOf(" by ");
-            String kickedNick = line.substring(startIndex, endIndex);
-            String kicker = line.substring(endIndex + 4);
-            tft.setTextColor(nickColors[kickedNick]);
-            tft.print(kickedNick);
-            tft.setTextColor(TFT_WHITE);
-            tft.print(" by ");
-            tft.setTextColor(nickColors[kicker]);
-            tft.print(kicker);
-            cursorY += CHAR_HEIGHT;
-        } else if (line.startsWith("MODE ")) {
-            tft.setTextColor(TFT_BLUE);
-            tft.print("MODE ");
-            String modeChange = line.substring(5);
-            tft.setTextColor(TFT_WHITE);
-            tft.print(modeChange);
-            cursorY += CHAR_HEIGHT;
-        } else {
-            int colonPos = line.indexOf(':');
-            String nick = line.substring(0, colonPos);
-            String message = line.substring(colonPos + 2);
-            tft.setTextColor(nickColors[nick]);
-            tft.print(nick + ": ");
-            tft.setTextColor(TFT_WHITE);
-
-            cursorY = renderFormattedMessage(message, cursorY, CHAR_HEIGHT);
-        }
-    }
-
-    displayInputLine();
-}
-
 int renderFormattedMessage(String message, int cursorY, int lineHeight) {
     uint16_t fgColor = TFT_WHITE;
     uint16_t bgColor = TFT_BLACK;
@@ -496,6 +519,7 @@ int renderFormattedMessage(String message, int cursorY, int lineHeight) {
     cursorY += lineHeight; // Add line height after printing the message
     return cursorY; // Return the new cursor Y position for the next line
 }
+
 
 int calculateLinesRequired(String message) {
     int linesRequired = 1;
@@ -562,8 +586,6 @@ void displayPasswordInputLine() {
     tft.print("> " + inputBuffer);
 }
 
-
-
 void updateSelectedNetwork(int delta) {
     int newIndex = selectedNetworkIndex + delta;
     if (newIndex >= 0 && newIndex < wifiNetworks.size()) {
@@ -602,8 +624,6 @@ void displayWiFiNetworks() {
     }
 }
 
-
-
 void displayWiFiNetwork(int index, int displayIndex) {
     int y = STATUS_BAR_HEIGHT + displayIndex * (CHAR_HEIGHT + LINE_SPACING);
     tft.setCursor(0, y);
@@ -624,8 +644,6 @@ void displayWiFiNetwork(int index, int displayIndex) {
     tft.setTextColor(index == selectedNetworkIndex ? TFT_GREEN : TFT_WHITE, TFT_BLACK);
     tft.printf("%-8s %s", net.encryption.c_str(), net.ssid.c_str());
 }
-
-
 
 void handleWiFiSelection(char key) {
     if (key == 'u') {
@@ -706,7 +724,7 @@ void updateStatusBar() {
         tft.setTextColor(TFT_PINK, darkerGrey);
         tft.drawString("WiFi:", SCREEN_WIDTH - 120, STATUS_BAR_HEIGHT / 2);
         tft.setTextColor(getColorFromPercentage(wifiSignal), darkerGrey);
-        tft.drawString(wifiStr + 6, SCREEN_WIDTH - 100, STATUS_BAR_HEIGHT / 2); // +6 to skip "WiFi: "
+        tft.drawString(wifiStr + 6, SCREEN_WIDTH - 100, STATUS_BAR_HEIGHT / 2);
     }
 
     int batteryLevel = BL.getBatteryChargeLevel();
@@ -716,7 +734,7 @@ void updateStatusBar() {
     tft.setTextColor(TFT_CYAN, darkerGrey);
     tft.drawString("Batt:", SCREEN_WIDTH - 40, STATUS_BAR_HEIGHT / 2);
     tft.setTextColor(getColorFromPercentage(batteryLevel), darkerGrey);
-    tft.drawString(batteryStr + 5, SCREEN_WIDTH - 5, STATUS_BAR_HEIGHT / 2); // +5 to skip "Batt: "
+    tft.drawString(batteryStr + 5, SCREEN_WIDTH - 5, STATUS_BAR_HEIGHT / 2);
 }
 
 uint16_t getColorFromPercentage(int rssi) {
@@ -726,10 +744,9 @@ uint16_t getColorFromPercentage(int rssi) {
     else return TFT_RED;
 }
 
-
 void updateTimeFromNTP() {
     configTime(-5 * 3600, 0, "pool.ntp.org", "time.nist.gov");
-    delay(2000);  // Wait for NTP to sync
+    delay(2000); 
     struct tm timeinfo;
     if (getLocalTime(&timeinfo)) {
         Serial.println(&timeinfo, "Time synchronized: %A, %B %d %Y %H:%M:%S");
