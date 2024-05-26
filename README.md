@@ -40,7 +40,8 @@ The device will scan for WiFi networks on boot. Once the list is displayed, you 
 
 # Debugging over Serial
 1. Install screen: `apt-get install screen` *(or whatever package manager you use)*
-2. `screen /dev/ttyAMC0 9600`
+2. Plug in your device via USB.
+2. Turn the device on, and run: `screen /dev/ttyAMC0 9600` *(again, this can also be /dev/ttyUSB0)*
 
 # Roapmap
 ###### Device functionality
