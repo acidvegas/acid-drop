@@ -57,6 +57,7 @@ This is being developed in my free time as a fun project. It is no where near be
 - [ ] SSH Client
 - [ ] Wardriving
 - [ ] Evil Portal AP
+- [ ] Local Network Probe *(Scans for devices on the wifi network you are connected to, add port scanning)*
 - [ ] Gotify
 - [ ] Meshtastic
 - [ ] Spotify/Music player *(can we play audio throuigh Bluetoth headphones or the on-board speaker?)*
