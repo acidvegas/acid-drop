@@ -56,6 +56,7 @@ This is being developed in my free time as a fun project. It is no where near be
 - Input messages exceeding the screen width go off screen, and need to wrap and create a new input line, pushing up the backlog of messages.
 - Some colors are not working when its only a background color or only contains a space
 - Sometimes it will not connect to IRC even from reconnections, and you have to reboot and try again.
+- Screen timeout can occur during an IRC reconnection and blck keyboard input
 
 
 # Contributors
