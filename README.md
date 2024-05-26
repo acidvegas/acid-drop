@@ -50,12 +50,12 @@ This is being developed in my free time as a fun project. It is no where near be
 - [ ] Trackball support
 - [ ] Serial logging + debug logs stored in memory that can be viewed on the device itself.
 - [ ] Allow specifying the IRC server, port, TLS, nick, etc...
-- [ ] Proper disconnection & reconnection handling
 
 # Known issues
 - Messages that exceed the screen width and wrap to the next line will throw off thje logic of calculating the max lines able to be displayed on the screen. Messages eventually go off screen.
 - Input messages exceeding the screen width go off screen, and need to wrap and create a new input line, pushing up the backlog of messages.
 - Some colors are not working when its only a background color or only contains a space
+- Sometimes it will not connect to IRC even from reconnections, and you have to reboot and try again.
 
 
 # Contributors
