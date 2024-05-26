@@ -445,15 +445,10 @@ void handleIRC() {
             sendIRC(pingResponse);
         } else {
             parseAndDisplay(line);
-            lastActivityTime = millis(); // Reset activity timer
-            if (!screenOn) {
-                turnOnScreen(); // Turn on screen and backlight
-            }
+            lastActivityTime = millis();
         }
     }
 }
-
-
 
 void parseAndDisplay(String line) {
     int firstSpace = line.indexOf(' ');
@@ -531,6 +526,7 @@ void handleKeyboardInput(char key) {
         }
     }
 }
+
 
 
 
