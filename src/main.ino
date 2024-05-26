@@ -54,6 +54,11 @@ bool readyToJoinChannel = false;
 unsigned long lastStatusUpdateTime = 0;
 const unsigned long STATUS_UPDATE_INTERVAL = 15000;
 
+unsigned long lastActivityTime = 0;
+const unsigned long INACTIVITY_TIMEOUT = 30000; // 30 seconds
+bool screenOn = true;
+
+
 struct WiFiNetwork {
     int index;
     int channel;
@@ -72,6 +77,9 @@ void setup() {
     pinMode(BOARD_POWERON, OUTPUT);
     digitalWrite(BOARD_POWERON, HIGH);
 
+    pinMode(TFT_BL, OUTPUT);
+    digitalWrite(TFT_BL, HIGH); // Turn on the backlight initially
+
     Wire.begin(BOARD_I2C_SDA, BOARD_I2C_SCL);
     tft.begin();
     tft.setRotation(1);
@@ -88,6 +96,7 @@ void setup() {
     int randomNum = random(1000, 10000);
     nick = "ACID_" + String(randomNum);
 }
+
 
 int renderFormattedMessage(String message, int cursorY, int lineHeight, bool highlightNick = false) {
     uint16_t fgColor = TFT_WHITE;
@@ -164,6 +173,20 @@ int renderFormattedMessage(String message, int cursorY, int lineHeight, bool hig
 
     cursorY += lineHeight; // Add line height after printing the message
     return cursorY; // Return the new cursor Y position for the next line
+}
+
+void turnOffScreen() {
+    tft.writecommand(TFT_DISPOFF); // Turn off display
+    tft.writecommand(TFT_SLPIN);   // Put display into sleep mode
+    digitalWrite(TFT_BL, LOW);     // Turn off the backlight (Assuming TFT_BL is the backlight pin)
+    screenOn = false;
+}
+
+void turnOnScreen() {
+    digitalWrite(TFT_BL, HIGH);    // Turn on the backlight (Assuming TFT_BL is the backlight pin)
+    tft.writecommand(TFT_SLPOUT);  // Wake up display from sleep mode
+    tft.writecommand(TFT_DISPON);  // Turn on display
+    screenOn = true;
 }
 
 void displayLines() {
@@ -312,6 +335,7 @@ void loop() {
         char incoming = getKeyboardInput();
         if (incoming != 0) {
             handleWiFiSelection(incoming);
+            lastActivityTime = millis(); // Reset activity timer
         }
     } else {
         if (millis() - lastStatusUpdateTime > STATUS_UPDATE_INTERVAL) {
@@ -348,9 +372,17 @@ void loop() {
         char incoming = getKeyboardInput();
         if (incoming != 0) {
             handleKeyboardInput(incoming);
+            lastActivityTime = millis(); // Reset activity timer
+        }
+
+        // Check for inactivity
+        if (screenOn && millis() - lastActivityTime > INACTIVITY_TIMEOUT) {
+            turnOffScreen(); // Turn off screen and backlight
         }
     }
 }
+
+
 
 bool connectToIRC() {
     if (useSSL) {
@@ -407,9 +439,15 @@ void handleIRC() {
             sendIRC(pingResponse);
         } else {
             parseAndDisplay(line);
+            lastActivityTime = millis(); // Reset activity timer
+            if (!screenOn) {
+                turnOnScreen(); // Turn on screen and backlight
+            }
         }
     }
 }
+
+
 
 void parseAndDisplay(String line) {
     int firstSpace = line.indexOf(' ');
@@ -457,7 +495,7 @@ void parseAndDisplay(String line) {
 void handleKeyboardInput(char key) {
     if (key == '\n' || key == '\r') { // Enter
         if (inputBuffer.startsWith("/raw ")) {
-            String rawCommand = inputBuffer.substring(5); // Remove "/raw "
+            String rawCommand = inputBuffer.substring(5);
             sendRawCommand(rawCommand);
         } else {
             sendIRC("PRIVMSG " + String(channel) + " :" + inputBuffer);
@@ -465,16 +503,30 @@ void handleKeyboardInput(char key) {
         }
         inputBuffer = "";
         displayInputLine();
+        lastActivityTime = millis(); // Reset activity timer
+        if (!screenOn) {
+            turnOnScreen(); // Turn on screen and backlight
+        }
     } else if (key == '\b') { // Backspace
         if (inputBuffer.length() > 0) {
             inputBuffer.remove(inputBuffer.length() - 1);
             displayInputLine();
+            lastActivityTime = millis(); // Reset activity timer
+            if (!screenOn) {
+                turnOnScreen(); // Turn on screen and backlight
+            }
         }
     } else {
         inputBuffer += key;
         displayInputLine();
+        lastActivityTime = millis(); // Reset activity timer
+        if (!screenOn) {
+            turnOnScreen(); // Turn on screen and backlight
+        }
     }
 }
+
+
 
 void sendRawCommand(String command) {
     if (client.connected()) {

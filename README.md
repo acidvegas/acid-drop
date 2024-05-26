@@ -32,6 +32,7 @@ This is being developed in my free time as a fun project. It is no where near be
 5. Flash the device: `esptool.py --chip esp32 --port /dev/ttyUSB0 --baud 115200 write_flash -z 0x1000 firmware.bin`
 
 # Roapmap
+- [X] Screen timeout on inactivity *(default 30 seconds)*
 - [X] Wifi scanning & selection menu
 - [ ] Saved wifi profiles
 - [X] IRC Client
