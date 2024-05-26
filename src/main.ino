@@ -21,8 +21,8 @@
 #define MAX_LINES ((SCREEN_HEIGHT - INPUT_LINE_HEIGHT - STATUS_BAR_HEIGHT) / (CHAR_HEIGHT + LINE_SPACING))
 
 #define BOARD_BAT_ADC 4 // Define the ADC pin used for battery reading
-#define CONV_FACTOR 1.8 // Conversion factor for the ADC to voltage conversion
-#define READS 20        // Number of readings for averaging
+#define CONV_FACTOR 1.8  // Conversion factor for the ADC to voltage conversion
+#define READS 20         // Number of readings for averaging
 Pangodream_18650_CL BL(BOARD_BAT_ADC, CONV_FACTOR, READS);
 
 TFT_eSPI tft = TFT_eSPI();
@@ -87,6 +87,83 @@ void setup() {
     randomSeed(analogRead(0));
     int randomNum = random(1000, 10000);
     nick = "ACID_" + String(randomNum);
+}
+
+int renderFormattedMessage(String message, int cursorY, int lineHeight, bool highlightNick = false) {
+    uint16_t fgColor = TFT_WHITE;
+    uint16_t bgColor = TFT_BLACK;
+    bool bold = false;
+    bool underline = false;
+    bool nickHighlighted = false; // Track if the nick has been highlighted
+
+    for (unsigned int i = 0; i < message.length(); i++) {
+        char c = message[i];
+        if (c == '\x02') { // Bold
+            bold = !bold;
+            tft.setTextFont(bold ? 2 : 1);
+        } else if (c == '\x1F') { // Underline
+            underline = !underline;
+            // need to add this still
+        } else if (c == '\x03') { // Color
+            fgColor = TFT_WHITE;
+            bgColor = TFT_BLACK;
+
+            if (i + 1 < message.length() && (isdigit(message[i + 1]) || message[i + 1] == ',')) {
+                int colorCode = -1;
+                if (isdigit(message[i + 1])) {
+                    colorCode = message[++i] - '0';
+                    if (i + 1 < message.length() && isdigit(message[i + 1]))
+                        colorCode = colorCode * 10 + (message[++i] - '0');
+                }
+
+                if (colorCode != -1)
+                    fgColor = getColorFromCode(colorCode);
+
+                if (i + 1 < message.length() && message[i + 1] == ',') {
+                    i++;
+                    int bgColorCode = -1;
+                    if (isdigit(message[i + 1])) {
+                        bgColorCode = message[++i] - '0';
+                        if (i + 1 < message.length() && isdigit(message[i + 1]))
+                            bgColorCode = bgColorCode * 10 + (message[++i] - '0');
+                    }
+
+                    if (bgColorCode != -1)
+                        bgColor = getColorFromCode(bgColorCode);
+
+                }
+
+                tft.setTextColor(fgColor, bgColor);
+            }
+        } else if (c == '\x0F') { // Reset
+            fgColor = TFT_WHITE;
+            bgColor = TFT_BLACK;
+            bold = false;
+            underline = false;
+            tft.setTextColor(fgColor, bgColor);
+            tft.setTextFont(1);
+        } else {
+            if (highlightNick && !nickHighlighted && message.substring(i).startsWith(nick)) {
+                tft.setTextColor(TFT_YELLOW);
+                for (char nc : nick) {
+                    tft.print(nc);
+                    i++;
+                }
+                i--; // Adjust for the loop increment
+                tft.setTextColor(TFT_WHITE);
+                nickHighlighted = true;
+            } else {
+                if (tft.getCursorX() + tft.textWidth(String(c)) > SCREEN_WIDTH) {
+                    cursorY += lineHeight;
+                    tft.setCursor(0, cursorY);
+                }
+                tft.print(c);
+            }
+        }
+    }
+
+    cursorY += lineHeight; // Add line height after printing the message
+    return cursorY; // Return the new cursor Y position for the next line
 }
 
 void displayLines() {
@@ -179,26 +256,15 @@ void displayLines() {
             // Check if the message contains the nick and highlight it
             int nickPos = message.indexOf(nick);
             if (mention && nickPos != -1) {
-                // Print part before the nick
-                tft.print(message.substring(0, nickPos));
-                // Print the nick in yellow
-                tft.setTextColor(TFT_YELLOW);
-                tft.print(nick);
-                // Print the part after the nick
-                tft.setTextColor(TFT_WHITE);
-                tft.print(message.substring(nickPos + nick.length()));
-                cursorY += CHAR_HEIGHT; // Ensure cursor moves to the next line after the highlighted message
+                cursorY = renderFormattedMessage(message, cursorY, CHAR_HEIGHT, true);
             } else {
-                cursorY = renderFormattedMessage(message, cursorY, CHAR_HEIGHT);
+                cursorY = renderFormattedMessage(message, cursorY, CHAR_HEIGHT, false);
             }
         }
     }
 
     displayInputLine();
 }
-
-
-
 
 
 void addLine(String senderNick, String message, String type, bool mention = false) {
@@ -455,72 +521,6 @@ void displayCenteredText(String text) {
     tft.drawString(text, SCREEN_WIDTH / 2, (SCREEN_HEIGHT + STATUS_BAR_HEIGHT) / 2);
 }
 
-int renderFormattedMessage(String message, int cursorY, int lineHeight) {
-    uint16_t fgColor = TFT_WHITE;
-    uint16_t bgColor = TFT_BLACK;
-    bool bold = false;
-    bool underline = false;
-
-    for (unsigned int i = 0; i < message.length(); i++) {
-        char c = message[i];
-        if (c == '\x02') { // Bold
-            bold = !bold;
-            tft.setTextFont(bold ? 2 : 1);
-        } else if (c == '\x1F') { // Underline
-            underline = !underline;
-            // need to add this still
-        } else if (c == '\x03') { // Color
-            fgColor = TFT_WHITE;
-            bgColor = TFT_BLACK;
-
-            if (i + 1 < message.length() && (isdigit(message[i + 1]) || message[i + 1] == ',')) {
-                int colorCode = -1;
-                if (isdigit(message[i + 1])) {
-                    colorCode = message[++i] - '0';
-                    if (i + 1 < message.length() && isdigit(message[i + 1]))
-                        colorCode = colorCode * 10 + (message[++i] - '0');
-                }
-
-                if (colorCode != -1)
-                    fgColor = getColorFromCode(colorCode);
-
-                if (i + 1 < message.length() && message[i + 1] == ',') {
-                    i++;
-                    int bgColorCode = -1;
-                    if (isdigit(message[i + 1])) {
-                        bgColorCode = message[++i] - '0';
-                        if (i + 1 < message.length() && isdigit(message[i + 1]))
-                            bgColorCode = bgColorCode * 10 + (message[++i] - '0');
-                    }
-
-                    if (bgColorCode != -1)
-                        bgColor = getColorFromCode(bgColorCode);
-
-                }
-
-                tft.setTextColor(fgColor, bgColor);
-            }
-        } else if (c == '\x0F') { // Reset
-            fgColor = TFT_WHITE;
-            bgColor = TFT_BLACK;
-            bold = false;
-            underline = false;
-            tft.setTextColor(fgColor, bgColor);
-            tft.setTextFont(1);
-        } else {
-            if (tft.getCursorX() + tft.textWidth(String(c)) > SCREEN_WIDTH) {
-                cursorY += lineHeight;
-                tft.setCursor(0, cursorY);
-            }
-            tft.print(c);
-        }
-    }
-
-    cursorY += lineHeight; // Add line height after printing the message
-    return cursorY; // Return the new cursor Y position for the next line
-}
-
-
 int calculateLinesRequired(String message) {
     int linesRequired = 1;
     int lineWidth = 0;
@@ -746,7 +746,7 @@ uint16_t getColorFromPercentage(int rssi) {
 
 void updateTimeFromNTP() {
     configTime(-5 * 3600, 0, "pool.ntp.org", "time.nist.gov");
-    delay(2000); 
+    delay(2000);  // Wait for NTP to sync
     struct tm timeinfo;
     if (getLocalTime(&timeinfo)) {
         Serial.println(&timeinfo, "Time synchronized: %A, %B %d %Y %H:%M:%S");
