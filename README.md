@@ -42,6 +42,7 @@ This is being developed in my free time as a fun project. It is no where near be
 - [ ] Wardriving
 - [ ] Gotify
 - [ ] Meshtastic
+- [ ] Spotify/Music player *(can we play audio throuigh Bluetoth headphones or the oon-board speaker?)*
 - [ ] Notifcations *(All notifications will go here, from IRC, Gotify, Meshtastic, or anything)* *(Need to add internal speaker support for notification sounds)*
 - [X] Status bar *(Time, Date, Notification icons, Wifi icon, Battery icon with Percent)*
 - [ ] Trackball support
