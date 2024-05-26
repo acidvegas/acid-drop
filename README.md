@@ -35,8 +35,9 @@ This is being developed in my free time as a fun project. It is no where near be
 - [X] Wifi scanning & selection menu
 - [ ] Saved wifi profiles
 - [X] IRC Client
-- [X] `/raw` command for IRC client to send raw data to the server
-- [ ] Add scrolling backlog for IRC to see the last 200 messages
+  - [X] `/raw` command for IRC client to send raw data to the server
+  - [ ] Add scrolling backlog for IRC to see the last 200 messages
+  - [X] Hilight support *(so we can see when people mention our NICK)*
 - [ ] ChatGPT
 - [ ] SSH Client
 - [ ] Wardriving
