@@ -32,9 +32,23 @@ This is being developed in my free time as a fun project. It is no where near be
 5. Flash the device: `esptool.py --chip esp32 --port /dev/ttyUSB0 --baud 115200 write_flash -z 0x1000 firmware.bin`
 
 # Roapmap
+###### Device functionality
 - [X] Screen timeout on inactivity *(default 30 seconds)*
+- [ ] Keyboard backlight timeout on 10 seconds oof inactivity.
+- [ ] Trackball support
+- [ ] Speaker support
+
+###### Features
 - [X] Wifi scanning & selection menu
 - [ ] Saved wifi profiles
+- [ ] Wifi Hotspot
+- [ ] Notifcations Window *(All notifications will go here, from IRC, Gotify, Meshtastic, or anything)*
+- [X] Status bar *(Time, Date, Notification, Wifi, and Battery)*
+  - [ ] XBM icons for status bar items
+- [ ] Allow specifying the IRC server, port, TLS, nick, etc...
+- [ ] Screensaver
+
+###### Applications
 - [X] IRC Client
   - [X] `/raw` command for IRC client to send raw data to the server
   - [ ] Add scrolling backlog for IRC to see the last 200 messages
@@ -42,14 +56,11 @@ This is being developed in my free time as a fun project. It is no where near be
 - [ ] ChatGPT
 - [ ] SSH Client
 - [ ] Wardriving
+- [ ] Evil Portal AP
 - [ ] Gotify
 - [ ] Meshtastic
-- [ ] Spotify/Music player *(can we play audio throuigh Bluetoth headphones or the oon-board speaker?)*
-- [ ] Notifcations *(All notifications will go here, from IRC, Gotify, Meshtastic, or anything)* *(Need to add internal speaker support for notification sounds)*
-- [X] Status bar *(Time, Date, Notification icons, Wifi icon, Battery icon with Percent)*
-- [ ] Trackball support
-- [ ] Serial logging + debug logs stored in memory that can be viewed on the device itself.
-- [ ] Allow specifying the IRC server, port, TLS, nick, etc...
+- [ ] Spotify/Music player *(can we play audio throuigh Bluetoth headphones or the on-board speaker?)*
+- [ ] Syslog *(All serial logs will be displayed here for on-device debugging)*
 
 # Known issues
 - Messages that exceed the screen width and wrap to the next line will throw off thje logic of calculating the max lines able to be displayed on the screen. Messages eventually go off screen.
