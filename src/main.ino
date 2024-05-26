@@ -35,6 +35,7 @@ String inputBuffer = "";
 // WiFi credentials
 String ssid = "";
 String password = "";
+String nick = "";
 
 // IRC connection
 const char* server = "irc.supernets.org";
@@ -43,7 +44,6 @@ bool useSSL = true;
 const char* channel = "#comms";
 
 // IRC identity
-const char* nick = "ACID_DROP";
 const char* user = "tdeck";
 const char* realname = "ACID DROP Firmware 1.0.0"; // Need to eventually set this up to use a variable
 
@@ -82,6 +82,10 @@ void setup() {
     delay(1000);
     scanWiFiNetworks();
     displayWiFiNetworks();
+
+    randomSeed(analogRead(0));
+    int randomNum = random(1000, 10000);
+    nick = "ACID_" + String(randomNum);
 }
 
 void loop() {
