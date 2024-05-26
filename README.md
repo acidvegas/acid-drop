@@ -12,6 +12,8 @@ The project started out with as IRC bridge for [Meshtastic](https://meshtastic.o
 
 This is being developed in my free time as a fun project. It is no where near being useful.
 
+A compiled "release" will be done once I finish somoe fo the basic features, but feel free t compile this on your own to test it out!
+
 # Previews
 ![](./.screens/preview1.png) ![](./.screens/preview2.png)
 
