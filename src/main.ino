@@ -396,14 +396,20 @@ bool connectToIRC() {
 
 void connectToWiFi() {
     WiFi.begin(ssid.c_str(), password.c_str());
-
-    while (WiFi.status() != WL_CONNECTED) {
+    int attempts = 0;
+    while (WiFi.status() != WL_CONNECTED && attempts < 10) { // Try to connect for up to 10 seconds
         delay(500);
         displayCenteredText("CONNECTING TO " + ssid);
+        attempts++;
     }
-    displayCenteredText("CONNECTED TO " + ssid);
-    delay(1000);
-    updateTimeFromNTP();
+    if (WiFi.status() == WL_CONNECTED) {
+        displayCenteredText("CONNECTED TO " + ssid);
+        delay(1000);
+        updateTimeFromNTP();
+    } else {
+        displayCenteredText("WIFI CONNECTION FAILED");
+        Serial.println("Failed to connect to WiFi.");
+    }
 }
 
 void sendIRC(String command) {
@@ -798,11 +804,17 @@ uint16_t getColorFromPercentage(int rssi) {
 
 void updateTimeFromNTP() {
     configTime(-5 * 3600, 0, "pool.ntp.org", "time.nist.gov");
-    delay(2000);  // Wait for NTP to sync
-    struct tm timeinfo;
-    if (getLocalTime(&timeinfo)) {
-        Serial.println(&timeinfo, "Time synchronized: %A, %B %d %Y %H:%M:%S");
-    } else {
-        Serial.println("Failed to synchronize time");
+
+    for (int i = 0; i < 10; ++i) { // Try up to 10 times
+        delay(2000);
+        struct tm timeinfo;
+        if (getLocalTime(&timeinfo)) {
+            Serial.println(&timeinfo, "Time synchronized: %A, %B %d %Y %H:%M:%S");
+            return;
+        } else {
+            Serial.println("Failed to synchronize time, retrying...");
+        }
     }
+
+    Serial.println("Failed to synchronize time after multiple attempts.");
 }
