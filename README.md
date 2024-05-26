@@ -32,7 +32,7 @@ A compiled "release" will be done once I finish somoe fo the basic features, but
 2. Install [esptool](https://pypi.org/project/esptool/): `pip install esptool`
 3. Hold down the trackball on the device, turn it on, and plug it in to the computer.
 4. Confirm the serial device in your `/dev` directory *(Your device will likely be `/dev/ttyAMC0` or `/dev/ttyUSB0`)*
-5. Flash the device: `esptool.py --chip esp32 --port /dev/ttyUSB0 --baud 115200 write_flash -z 0x1000 firmware.bin`
+5. Flash the device: `esptool.py --chip esp32-s3 --port /dev/ttyUSB0 --baud 115200 write_flash -z 0x1000 firmware.bin`
 6. Press the RST *(reset)* button ont he device.
 
 # Roapmap
