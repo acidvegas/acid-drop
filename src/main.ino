@@ -38,6 +38,10 @@ String ssid = "";
 String password = "";
 String nick = "";
 
+bool debugMode = false;
+unsigned long debugStartTime = 0;
+
+
 // IRC connection
 const char* server = "irc.supernets.org";
 const int port = 6697;
@@ -69,10 +73,6 @@ struct WiFiNetwork {
 
 std::vector<WiFiNetwork> wifiNetworks;
 int selectedNetworkIndex = 0;
-
-void debugPrint(String message) {
-    Serial.println(message);
-}
 
 void setup() {
     Serial.begin(115200);
@@ -321,7 +321,6 @@ void displayLines() {
     displayInputLine();
 }
 
-
 void addLine(String senderNick, String message, String type, bool mention = false) {
     if (nickColors.find(senderNick) == nickColors.end())
         nickColors[senderNick] = generateRandomColor();
@@ -362,54 +361,68 @@ void addLine(String senderNick, String message, String type, bool mention = fals
     displayLines();
 }
 
+void displayDeviceInfo() {
+    tft.fillScreen(TFT_BLACK);
+    printDeviceInfo();
+}
+
 void loop() {
-    if (ssid.isEmpty()) {
-        char incoming = getKeyboardInput();
-        if (incoming != 0) {
-            handleWiFiSelection(incoming);
-            lastActivityTime = millis(); // Reset activity timer
+    if (debugMode) {
+        if (millis() - debugStartTime > 10000) { // 10 seconds
+            debugMode = false;
+            // Clear the screen and return to the IRC interface
+            tft.fillScreen(TFT_BLACK);
+            displayLines();
         }
     } else {
-        if (millis() - lastStatusUpdateTime > STATUS_UPDATE_INTERVAL) {
-            updateStatusBar();
-            lastStatusUpdateTime = millis();
-        }
-
-        if (client.connected()) {
-            handleIRC();
-        } else {
-            if (WiFi.status() == WL_CONNECTED) {
-                displayCenteredText("CONNECTING TO " + String(server));
-                if (connectToIRC()) {
-                    displayCenteredText("CONNECTED TO " + String(server));
-                    sendIRC("NICK " + String(nick));
-                    sendIRC("USER " + String(user) + " 0 * :" + String(realname));
-                } else {
-                    displayCenteredText("CONNECTION FAILED");
-                    delay(1000);
-                }
-            } else {
-                displayCenteredText("RECONNECTING TO WIFI");
-                WiFi.begin(ssid.c_str(), password.c_str());
+        if (ssid.isEmpty()) {
+            char incoming = getKeyboardInput();
+            if (incoming != 0) {
+                handleWiFiSelection(incoming);
+                lastActivityTime = millis(); // Reset activity timer
             }
-        }
+        } else {
+            if (millis() - lastStatusUpdateTime > STATUS_UPDATE_INTERVAL) {
+                updateStatusBar();
+                lastStatusUpdateTime = millis();
+            }
 
-        if (readyToJoinChannel && millis() >= joinChannelTime) {
-            tft.fillScreen(TFT_BLACK);
-            updateStatusBar();
-            sendIRC("JOIN " + String(channel));
-            readyToJoinChannel = false;
-        }
+            if (client.connected()) {
+                handleIRC();
+            } else {
+                if (WiFi.status() == WL_CONNECTED) {
+                    displayCenteredText("CONNECTING TO " + String(server));
+                    if (connectToIRC()) {
+                        displayCenteredText("CONNECTED TO " + String(server));
+                        sendIRC("NICK " + String(nick));
+                        sendIRC("USER " + String(user) + " 0 * :" + String(realname));
+                    } else {
+                        displayCenteredText("CONNECTION FAILED");
+                        delay(1000);
+                    }
+                } else {
+                    displayCenteredText("RECONNECTING TO WIFI");
+                    WiFi.begin(ssid.c_str(), password.c_str());
+                }
+            }
 
-        char incoming = getKeyboardInput();
-        if (incoming != 0) {
-            handleKeyboardInput(incoming);
-            lastActivityTime = millis(); // Reset activity timer
-        }
+            if (readyToJoinChannel && millis() >= joinChannelTime) {
+                tft.fillScreen(TFT_BLACK);
+                updateStatusBar();
+                sendIRC("JOIN " + String(channel));
+                readyToJoinChannel = false;
+            }
 
-        // Check for inactivity
-        if (screenOn && millis() - lastActivityTime > INACTIVITY_TIMEOUT) {
-            turnOffScreen(); // Turn off screen and backlight
+            char incoming = getKeyboardInput();
+            if (incoming != 0) {
+                handleKeyboardInput(incoming);
+                lastActivityTime = millis(); // Reset activity timer
+            }
+
+            // Check for inactivity
+            if (screenOn && millis() - lastActivityTime > INACTIVITY_TIMEOUT) {
+                turnOffScreen(); // Turn off screen and backlight
+            }
         }
     }
 }
@@ -527,7 +540,12 @@ void parseAndDisplay(String line) {
 
 void handleKeyboardInput(char key) {
     if (key == '\n' || key == '\r') { // Enter
-        if (inputBuffer.startsWith("/raw ")) {
+        if (inputBuffer.startsWith("/debug")) {
+            debugMode = true;
+            debugStartTime = millis();
+            displayDeviceInfo();
+            inputBuffer = "";
+        } else if (inputBuffer.startsWith("/raw ")) {
             String rawCommand = inputBuffer.substring(5);
             sendRawCommand(rawCommand);
         } else {
@@ -558,6 +576,7 @@ void handleKeyboardInput(char key) {
         }
     }
 }
+
 
 void sendRawCommand(String command) {
     if (client.connected()) {
@@ -847,4 +866,101 @@ void updateTimeFromNTP() {
     }
 
     Serial.println("Failed to synchronize time after multiple attempts.");
+}
+
+String formatBytes(size_t bytes) {
+    if (bytes < 1024) {
+        return String(bytes) + " B";
+    } else if (bytes < (1024 * 1024)) {
+        return String(bytes / 1024.0, 2) + " KB";
+    } else if (bytes < (1024 * 1024 * 1024)) {
+        return String(bytes / 1024.0 / 1024.0, 2) + " MB";
+    } else {
+        return String(bytes / 1024.0 / 1024.0 / 1024.0, 2) + " GB";
+    }
+}
+
+void printDeviceInfo() {
+    // Get MAC Address
+    uint8_t mac[6];
+    esp_efuse_mac_get_default(mac);
+    String macAddress = String(mac[0], HEX) + ":" + String(mac[1], HEX) + ":" +
+                        String(mac[2], HEX) + ":" + String(mac[3], HEX) + ":" +
+                        String(mac[4], HEX) + ":" + String(mac[5], HEX);
+
+    // Get Chip Info
+    uint32_t chipId = ESP.getEfuseMac(); // Unique ID
+    esp_chip_info_t chip_info;
+    esp_chip_info(&chip_info);
+    String chipInfo = String(chip_info.model) + " Rev " + String(chip_info.revision) +
+                      ", " + String(chip_info.cores) + " cores, " +
+                      String(ESP.getCpuFreqMHz()) + " MHz";
+
+    // Get Flash Info
+    size_t flashSize = spi_flash_get_chip_size();
+    size_t flashUsed = ESP.getFlashChipSize() - ESP.getFreeSketchSpace();
+    String flashInfo = formatBytes(flashUsed) + " / " + formatBytes(flashSize);
+    
+    // Get PSRAM Info
+    size_t total_psram = ESP.getPsramSize();
+    size_t free_psram = ESP.getFreePsram();
+    String psramInfo = formatBytes(total_psram - free_psram) + " / " + formatBytes(total_psram);
+
+    // Get Heap Info
+    size_t total_heap = ESP.getHeapSize();
+    size_t free_heap = ESP.getFreeHeap();
+    String heapInfo = formatBytes(total_heap - free_heap) + " / " + formatBytes(total_heap);
+
+    // Get WiFi Info
+    String wifiInfo = "Not connected";
+    String wifiSSID = "";
+    String wifiChannel = "";
+    String wifiSignal = "";
+    String wifiLocalIP = "";
+    String wifiGatewayIP = "";
+    if (WiFi.status() == WL_CONNECTED) {
+        wifiSSID = WiFi.SSID();
+        wifiChannel = String(WiFi.channel());
+        wifiSignal = String(WiFi.RSSI()) + " dBm";
+        wifiLocalIP = WiFi.localIP().toString();
+        wifiGatewayIP = WiFi.gatewayIP().toString();
+    }
+
+    // Print to Serial Monitor
+    Serial.println("Chip ID: " + String(chipId, HEX));
+    Serial.println("MAC Address: " + macAddress);
+    Serial.println("Chip Info: " + chipInfo);
+    Serial.println("Memory:");
+    Serial.println("  Flash: " + flashInfo);
+    Serial.println("  PSRAM: " + psramInfo);
+    Serial.println("  Heap: " + heapInfo);
+    Serial.println("WiFi Info: " + wifiInfo);
+    if (WiFi.status() == WL_CONNECTED) {
+        Serial.println("  SSID: " + wifiSSID);
+        Serial.println("  Channel: " + wifiChannel);
+        Serial.println("  Signal: " + wifiSignal);
+        Serial.println("  Local IP: " + wifiLocalIP);
+        Serial.println("  Gateway IP: " + wifiGatewayIP);
+    }
+
+    // Display on TFT
+    tft.fillScreen(TFT_BLACK);
+    int line = 0;
+    tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("Chip ID:       "); tft.setTextColor(TFT_WHITE); tft.println(String(chipId, HEX)); line++;
+    tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("MAC Address:   "); tft.setTextColor(TFT_WHITE); tft.println(macAddress); line++;
+    tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("Chip Info:     "); tft.setTextColor(TFT_WHITE); tft.println(chipInfo); line++;
+    tft.setCursor(0, line * 16); tft.setTextColor(TFT_CYAN); tft.print("Memory:        "); tft.setTextColor(TFT_WHITE); tft.println(""); line++;
+    tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  Flash:       "); tft.setTextColor(TFT_WHITE); tft.println(flashInfo); line++;
+    tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  PSRAM:       "); tft.setTextColor(TFT_WHITE); tft.println(psramInfo); line++;
+    tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  Heap:        "); tft.setTextColor(TFT_WHITE); tft.println(heapInfo); line++;
+    if (WiFi.status() == WL_CONNECTED) {
+        tft.setCursor(0, line * 16); tft.setTextColor(TFT_CYAN); tft.print("WiFi Info:     "); tft.setTextColor(TFT_WHITE); tft.println(""); line++;
+        tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  SSID:        "); tft.setTextColor(TFT_WHITE); tft.println(wifiSSID); line++;
+        tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  Channel:     "); tft.setTextColor(TFT_WHITE); tft.println(wifiChannel); line++;
+        tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  Signal:      "); tft.setTextColor(TFT_WHITE); tft.println(wifiSignal); line++;
+        tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  Local IP:    "); tft.setTextColor(TFT_WHITE); tft.println(wifiLocalIP); line++;
+        tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  Gateway IP:  "); tft.setTextColor(TFT_WHITE); tft.println(wifiGatewayIP); line++;
+    } else {
+        tft.setCursor(0, line * 16); tft.setTextColor(TFT_CYAN); tft.print("WiFi Info:     "); tft.setTextColor(TFT_WHITE); tft.println("Not connected"); line++;
+    }
 }
