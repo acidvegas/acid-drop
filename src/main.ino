@@ -173,14 +173,37 @@ int renderFormattedMessage(String message, int cursorY, int lineHeight, bool hig
                     cursorY += lineHeight;
                     tft.setCursor(0, cursorY);
                 }
-                tft.print(c);
+                if (c == ' ') {
+                    // Draw background for spaces
+                    int spaceWidth = tft.textWidth(" ");
+                    tft.fillRect(tft.getCursorX(), tft.getCursorY(), spaceWidth, lineHeight, bgColor);
+                    tft.setCursor(tft.getCursorX() + spaceWidth, tft.getCursorY());
+                } else {
+                    // Ensure that background color is applied to characters
+                    tft.setTextColor(fgColor, bgColor);
+                    tft.print(c);
+                }
             }
+        }
+    }
+
+    // Ensure trailing spaces are displayed with background color
+    if (message.endsWith(" ")) {
+        int trailingSpaces = 0;
+        for (int i = message.length() - 1; i >= 0 && message[i] == ' '; i--) {
+            trailingSpaces++;
+        }
+        for (int i = 0; i < trailingSpaces; i++) {
+            int spaceWidth = tft.textWidth(" ");
+            tft.fillRect(tft.getCursorX(), tft.getCursorY(), spaceWidth, lineHeight, bgColor);
+            tft.setCursor(tft.getCursorX() + spaceWidth, tft.getCursorY());
         }
     }
 
     cursorY += lineHeight; // Add line height after printing the message
     return cursorY; // Return the new cursor Y position for the next line
 }
+
 
 void turnOffScreen() {
     Serial.println("Screen turned off");
@@ -432,7 +455,6 @@ void sendIRC(String command) {
 void handleIRC() {
     while (client.available()) {
         String line = client.readStringUntil('\n');
-        line.trim();
         Serial.println("IRC: " + line);
 
         int firstSpace = line.indexOf(' ');
