@@ -253,7 +253,7 @@ void turnOffScreen() {
     debugPrint("Screen turned off");
     tft.writecommand(TFT_DISPOFF); // Turn off display
     tft.writecommand(TFT_SLPIN);   // Put display into sleep mode
-    digitalWrite(TFT_BL, LOW);     // Turn off the backlight (Assuming TFT_BL is the backlight pin)
+    digitalWrite(TFT_BL, LOW);     // Turn off the backlight
     screenOn = false;
 }
 
@@ -339,40 +339,40 @@ void displayLines() {
             tft.print(kicker);
             cursorY += CHAR_HEIGHT;
         } else if (line.startsWith("MODE ")) {
-            tft.setTextColor(TFT_BLUE);
+            tft.setTextColor(TFT_YELLOW);
             tft.print("MODE ");
             String modeChange = line.substring(5);
             tft.setTextColor(TFT_WHITE);
             tft.print(modeChange);
             cursorY += CHAR_HEIGHT;
-        } else if (line.startsWith("* ")) { // Check for action message
-            int spacePos = line.indexOf(' ', 2);
-            String senderNick = line.substring(2, spacePos);
-            String actionMessage = line.substring(spacePos + 1);
-
-            tft.setTextColor(TFT_WHITE);
+        } else if (line.startsWith("ERROR ")) {
+            tft.setTextColor(TFT_RED);
+            tft.print("ERROR ");
+            String errorReason = line.substring(6);
+            tft.setTextColor(TFT_DARKGREY);
+            tft.print(errorReason);
+            cursorY += CHAR_HEIGHT;
+        } else if (line.startsWith("* ")) {
+            tft.setTextColor(TFT_MAGENTA);
             tft.print("* ");
+            int startIndex = 2;
+            int endIndex = line.indexOf(' ', startIndex);
+            String senderNick = line.substring(startIndex, endIndex);
+            String actionMessage = line.substring(endIndex + 1);
             tft.setTextColor(nickColors[senderNick]);
             tft.print(senderNick + " ");
             tft.setTextColor(TFT_WHITE);
             tft.print(actionMessage);
             cursorY += CHAR_HEIGHT;
         } else {
-            int colonPos = line.indexOf(':');
-            String senderNick = line.substring(0, colonPos);
-            String message = line.substring(colonPos + 2);
+            int colonIndex = line.indexOf(':');
+            String senderNick = line.substring(0, colonIndex);
+            String message = line.substring(colonIndex + 1);
 
             tft.setTextColor(nickColors[senderNick]);
-            tft.print(senderNick + ": ");
+            tft.print(senderNick);
             tft.setTextColor(TFT_WHITE);
-
-            // Check if the message contains the nick and highlight it
-            int nickPos = message.indexOf(nick);
-            if (mention && nickPos != -1) {
-                cursorY = renderFormattedMessage(message, cursorY, CHAR_HEIGHT, true);
-            } else {
-                cursorY = renderFormattedMessage(message, cursorY, CHAR_HEIGHT, false);
-            }
+            cursorY = renderFormattedMessage(":" + message, cursorY, CHAR_HEIGHT, mention);
         }
     }
 
@@ -424,6 +424,11 @@ void addLine(String senderNick, String message, String type, bool mention = fals
     addLineToBuffer(currentBuffer, senderNick, message, type, mention);
 
     displayLines();
+}
+
+void displayDeviceInfo() {
+    tft.fillScreen(TFT_BLACK);
+    printDeviceInfo();
 }
 
 void loop() {
@@ -627,13 +632,13 @@ void parseAndDisplay(String line) {
                 }
             }
         } else if (command == "NICK") {
-            String oldNick = line.substring(1, line.indexOf('!'));
+            String prefix = line.startsWith(":") ? line.substring(1, firstSpace) : "";
             String newNick = line.substring(line.lastIndexOf(':') + 1);
             for (auto& buffer : buffers) {
                 if (buffer.channel == buffers[currentBufferIndex].channel) {
-                    addLine(oldNick, " -> " + newNick, "nick", false);
+                    addLine(prefix, " -> " + newNick, "nick", false);
                 } else {
-                    addLineToBuffer(buffer, oldNick, " -> " + newNick, "nick", false);
+                    addLineToBuffer(buffer, prefix, " -> " + newNick, "nick", false);
                 }
             }
         } else if (command == "KICK") {
@@ -674,7 +679,7 @@ Buffer& getBufferByChannel(String channel) {
 }
 
 void handleKeyboardInput(char key) {
-    if (key == '\n' || key == '\r') {
+    if (key == '\n' || key == '\r') { // Enter
         if (inputBuffer.startsWith("/")) {
             handleCommand(inputBuffer);
         } else {
@@ -683,17 +688,17 @@ void handleKeyboardInput(char key) {
         }
         inputBuffer = "";
         displayInputLine();
-        lastActivityTime = millis(); // Reset activity timer
+        lastActivityTime = millis();
         if (!screenOn) {
-            turnOnScreen(); // Turn on screen and backlight
+            turnOnScreen();
         }
     } else if (key == '\b') { // Backspace
         if (inputBuffer.length() > 0) {
             inputBuffer.remove(inputBuffer.length() - 1);
             displayInputLine();
-            lastActivityTime = millis(); // Reset activity timer
+            lastActivityTime = millis();
             if (!screenOn) {
-                turnOnScreen(); // Turn on screen and backlight
+                turnOnScreen();
             }
         }
     } else {
@@ -747,6 +752,8 @@ void handleCommand(String command) {
         String newNick = command.substring(6);
         sendIRC("NICK " + newNick);
         nick = newNick;
+    } else if (command.startsWith("/info")) {
+        displayDeviceInfo();
     } else if (command.startsWith("/")) {
         if (command == "/debug") {
             debugEnabled = true;
@@ -803,7 +810,18 @@ void displayInputLine() {
     tft.setCursor(0, SCREEN_HEIGHT - INPUT_LINE_HEIGHT);
     tft.setTextColor(TFT_WHITE);
     tft.setTextSize(1);
-    tft.print("> " + inputBuffer);
+
+    int inputWidth = SCREEN_WIDTH - tft.textWidth("> ");
+    String displayInput = inputBuffer;
+    int displayWidth = tft.textWidth(displayInput);
+
+    // Scrolling input text
+    while (displayWidth > inputWidth) {
+        displayInput = displayInput.substring(1);
+        displayWidth = tft.textWidth(displayInput);
+    }
+
+    tft.print("> " + displayInput);
 }
 
 void displayCenteredText(String text) {
@@ -1158,4 +1176,96 @@ void saveWiFiCredentials() {
     preferences.putString("ssid", ssid);
     preferences.putString("password", password);
     debugPrint("WiFi credentials saved.");
+}
+
+String formatBytes(size_t bytes) {
+    if (bytes < 1024)
+        return String(bytes) + " B";
+    else if (bytes < (1024 * 1024))
+        return String(bytes / 1024.0, 2) + " KB";
+    else if (bytes < (1024 * 1024 * 1024))
+        return String(bytes / 1024.0 / 1024.0, 2) + " MB";
+    else
+        return String(bytes / 1024.0 / 1024.0 / 1024.0, 2) + " GB";
+}
+
+void printDeviceInfo() {
+    // Get MAC Address
+    uint8_t mac[6];
+    esp_efuse_mac_get_default(mac);
+    String macAddress = String(mac[0], HEX) + ":" + String(mac[1], HEX) + ":" + String(mac[2], HEX) + ":" + String(mac[3], HEX) + ":" + String(mac[4], HEX) + ":" + String(mac[5], HEX);
+
+    // Get Chip Info
+    uint32_t chipId = ESP.getEfuseMac(); // Unique ID
+    esp_chip_info_t chip_info;
+    esp_chip_info(&chip_info);
+    String chipInfo = String(chip_info.model) + " Rev " + String(chip_info.revision) + ", " + String(chip_info.cores) + " cores, " +  String(ESP.getCpuFreqMHz()) + " MHz";
+
+    // Get Flash Info
+    size_t flashSize = spi_flash_get_chip_size();
+    size_t flashUsed = ESP.getFlashChipSize() - ESP.getFreeSketchSpace();
+    String flashInfo = formatBytes(flashUsed) + " / " + formatBytes(flashSize);
+    
+    // Get PSRAM Info
+    size_t total_psram = ESP.getPsramSize();
+    size_t free_psram = ESP.getFreePsram();
+    String psramInfo = formatBytes(total_psram - free_psram) + " / " + formatBytes(total_psram);
+
+    // Get Heap Info
+    size_t total_heap = ESP.getHeapSize();
+    size_t free_heap = ESP.getFreeHeap();
+    String heapInfo = formatBytes(total_heap - free_heap) + " / " + formatBytes(total_heap);
+
+    // Get WiFi Info
+    String wifiInfo = "Not connected";
+    String wifiSSID = "";
+    String wifiChannel = "";
+    String wifiSignal = "";
+    String wifiLocalIP = "";
+    String wifiGatewayIP = "";
+    if (WiFi.status() == WL_CONNECTED) {
+        wifiSSID = WiFi.SSID();
+        wifiChannel = String(WiFi.channel());
+        wifiSignal = String(WiFi.RSSI()) + " dBm";
+        wifiLocalIP = WiFi.localIP().toString();
+        wifiGatewayIP = WiFi.gatewayIP().toString();
+    }
+
+    // Print to Serial Monitor
+    Serial.println("Chip ID: " + String(chipId, HEX));
+    Serial.println("MAC Address: " + macAddress);
+    Serial.println("Chip Info: " + chipInfo);
+    Serial.println("Memory:");
+    Serial.println("  Flash: " + flashInfo);
+    Serial.println("  PSRAM: " + psramInfo);
+    Serial.println("  Heap: " + heapInfo);
+    Serial.println("WiFi Info: " + wifiInfo);
+    if (WiFi.status() == WL_CONNECTED) {
+        Serial.println("  SSID: " + wifiSSID);
+        Serial.println("  Channel: " + wifiChannel);
+        Serial.println("  Signal: " + wifiSignal);
+        Serial.println("  Local IP: " + wifiLocalIP);
+        Serial.println("  Gateway IP: " + wifiGatewayIP);
+    }
+
+    // Display on TFT
+    tft.fillScreen(TFT_BLACK);
+    int line = 0;
+    tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("Chip ID:       "); tft.setTextColor(TFT_WHITE); tft.println(String(chipId, HEX)); line++;
+    tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("MAC Address:   "); tft.setTextColor(TFT_WHITE); tft.println(macAddress); line++;
+    tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("Chip Info:     "); tft.setTextColor(TFT_WHITE); tft.println(chipInfo); line++;
+    tft.setCursor(0, line * 16); tft.setTextColor(TFT_CYAN); tft.print("Memory:        "); tft.setTextColor(TFT_WHITE); tft.println(""); line++;
+    tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  Flash:       "); tft.setTextColor(TFT_WHITE); tft.println(flashInfo); line++;
+    tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  PSRAM:       "); tft.setTextColor(TFT_WHITE); tft.println(psramInfo); line++;
+    tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  Heap:        "); tft.setTextColor(TFT_WHITE); tft.println(heapInfo); line++;
+    if (WiFi.status() == WL_CONNECTED) {
+        tft.setCursor(0, line * 16); tft.setTextColor(TFT_CYAN); tft.print("WiFi Info:     "); tft.setTextColor(TFT_WHITE); tft.println(""); line++;
+        tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  SSID:        "); tft.setTextColor(TFT_WHITE); tft.println(wifiSSID); line++;
+        tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  Channel:     "); tft.setTextColor(TFT_WHITE); tft.println(wifiChannel); line++;
+        tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  Signal:      "); tft.setTextColor(TFT_WHITE); tft.println(wifiSignal); line++;
+        tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  Local IP:    "); tft.setTextColor(TFT_WHITE); tft.println(wifiLocalIP); line++;
+        tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  Gateway IP:  "); tft.setTextColor(TFT_WHITE); tft.println(wifiGatewayIP); line++;
+    } else {
+        tft.setCursor(0, line * 16); tft.setTextColor(TFT_CYAN); tft.print("WiFi Info:     "); tft.setTextColor(TFT_WHITE); tft.println("Not connected"); line++;
+    }
 }
