@@ -2,11 +2,11 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <Wire.h>
-#include <Pangodream_18650_CL.h> // POWER MANAGEMENT
+#include <Pangodream_18650_CL.h>
+#include <Preferences.h>
 #include <map>
 #include <vector>
 #include <time.h>
-
 #include "boot_screen.h"
 #include "pins.h"
 
@@ -20,17 +20,15 @@
 #define STATUS_BAR_HEIGHT 10
 #define MAX_LINES ((SCREEN_HEIGHT - INPUT_LINE_HEIGHT - STATUS_BAR_HEIGHT) / (CHAR_HEIGHT + LINE_SPACING))
 
-#define BOARD_BAT_ADC 4 // Define the ADC pin used for battery reading
-#define CONV_FACTOR 1.8  // Conversion factor for the ADC to voltage conversion
-#define READS 20         // Number of readings for averaging
+#define BOARD_BAT_ADC 4
+#define CONV_FACTOR 1.8
+#define READS 20
 Pangodream_18650_CL BL(BOARD_BAT_ADC, CONV_FACTOR, READS);
 
 TFT_eSPI tft = TFT_eSPI();
 WiFiClientSecure client;
 
 std::map<String, uint32_t> nickColors;
-std::vector<String> lines;
-std::vector<bool> mentions;
 String inputBuffer = "";
 
 // WiFi credentials
@@ -38,30 +36,48 @@ String ssid = "";
 String password = "";
 String nick = "";
 
-bool debugMode = false;
-unsigned long debugStartTime = 0;
-
+// Preferences for saving WiFi credentials
+Preferences preferences;
 
 // IRC connection
 const char* server = "irc.supernets.org";
 const int port = 6697;
 bool useSSL = true;
-const char* channel = "#comms";
 
 // IRC identity
-const char* user = "tdeck";
-const char* realname = "ACID DROP Firmware 1.0.0"; // Need to eventually set this up to use a variable
+const char* user = "tdisck";
+const char* realname = "ACID DROP Firmware 1.0.0";
 
 unsigned long joinChannelTime = 0;
 bool readyToJoinChannel = false;
 
 unsigned long lastStatusUpdateTime = 0;
 const unsigned long STATUS_UPDATE_INTERVAL = 15000;
+const unsigned long TOPIC_SCROLL_INTERVAL = 100;
+const unsigned long TOPIC_DISPLAY_INTERVAL = 10000;
+
+unsigned long lastTopicUpdateTime = 0;
+unsigned long lastTopicDisplayTime = 0;
+bool topicUpdated = false;
+bool displayingTopic = false;
 
 unsigned long lastActivityTime = 0;
-const unsigned long INACTIVITY_TIMEOUT = 30000; // 30 seconds
+const unsigned long INACTIVITY_TIMEOUT = 30000;
 bool screenOn = true;
 
+bool enteringPassword = false;
+bool debugEnabled = false;
+
+String currentTopic = ""; // Placeholder for the IRC topic
+int topicOffset = 0; // For scrolling the topic text
+
+// Buffer structure and initialization
+struct Buffer {
+    std::vector<String> lines;
+    std::vector<bool> mentions;
+    String channel;
+    String topic;
+};
 
 struct WiFiNetwork {
     int index;
@@ -74,36 +90,65 @@ struct WiFiNetwork {
 std::vector<WiFiNetwork> wifiNetworks;
 int selectedNetworkIndex = 0;
 
+std::vector<Buffer> buffers;
+int currentBufferIndex = 0;
+
+void debugPrint(String message) {
+    if (debugEnabled) {
+        Serial.println(message);
+    }
+}
+
 void setup() {
-    Serial.begin(115200);
-    Serial.println("Booting device...");
+    // Initialize I2C to read keyboard input
+    Wire.begin(BOARD_I2C_SDA, BOARD_I2C_SCL);
+    
+    // Check if 'd' key is pressed during boot
+    char keyPressed = getKeyboardInput();
+    if (keyPressed == 'd') {
+        debugEnabled = true;
+        Serial.begin(115200);
+        Serial.println("Booting device...");
+    }
 
     pinMode(BOARD_POWERON, OUTPUT);
     digitalWrite(BOARD_POWERON, HIGH);
 
     pinMode(TFT_BL, OUTPUT);
-    digitalWrite(TFT_BL, HIGH); // Turn on the backlight initially
-
-    Wire.begin(BOARD_I2C_SDA, BOARD_I2C_SCL);
+    digitalWrite(TFT_BL, HIGH);
 
     tft.begin();
     tft.setRotation(1);
     tft.invertDisplay(1);
 
-    Serial.println("TFT initialized");
+    debugPrint("TFT initialized");
 
     displayXBM();
     delay(3000);
     displayCenteredText("SCANNING WIFI");
     delay(1000);
-    scanWiFiNetworks();
-    displayWiFiNetworks();
+
+    preferences.begin("wifi", false);  // Start preferences with namespace "wifi"
+    ssid = preferences.getString("ssid", "");
+    password = preferences.getString("password", "");
+
+    if (ssid != "" && password != "") {
+        connectToWiFi();
+    } else {
+        scanWiFiNetworks();
+        displayWiFiNetworks();
+    }
 
     randomSeed(analogRead(0));
-    int randomNum = random(1000, 10000);
-    nick = "ACID_" + String(randomNum);
-}
+    nick = "s4d";
 
+    Buffer defaultBuffer;
+    defaultBuffer.channel = "#comms";
+    buffers.push_back(defaultBuffer);
+
+    defaultBuffer.channel = "#superbowl";
+    buffers.push_back(defaultBuffer);
+}
 
 int renderFormattedMessage(String message, int cursorY, int lineHeight, bool highlightNick = false) {
     uint16_t fgColor = TFT_WHITE;
@@ -119,7 +164,6 @@ int renderFormattedMessage(String message, int cursorY, int lineHeight, bool hig
             tft.setTextFont(bold ? 2 : 1);
         } else if (c == '\x1F') { // Underline
             underline = !underline;
-            // need to add this still
         } else if (c == '\x03') { // Color
             fgColor = TFT_WHITE;
             bgColor = TFT_BLACK;
@@ -146,7 +190,6 @@ int renderFormattedMessage(String message, int cursorY, int lineHeight, bool hig
 
                     if (bgColorCode != -1)
                         bgColor = getColorFromCode(bgColorCode);
-
                 }
 
                 tft.setTextColor(fgColor, bgColor);
@@ -206,7 +249,7 @@ int renderFormattedMessage(String message, int cursorY, int lineHeight, bool hig
 }
 
 void turnOffScreen() {
-    Serial.println("Screen turned off");
+    debugPrint("Screen turned off");
     tft.writecommand(TFT_DISPOFF); // Turn off display
     tft.writecommand(TFT_SLPIN);   // Put display into sleep mode
     digitalWrite(TFT_BL, LOW);     // Turn off the backlight (Assuming TFT_BL is the backlight pin)
@@ -214,7 +257,7 @@ void turnOffScreen() {
 }
 
 void turnOnScreen() {
-    Serial.println("Screen turned on");
+    debugPrint("Screen turned on");
     digitalWrite(TFT_BL, HIGH);    // Turn on the backlight (Assuming TFT_BL is the backlight pin)
     tft.writecommand(TFT_SLPOUT);  // Wake up display from sleep mode
     tft.writecommand(TFT_DISPON);  // Turn on display
@@ -225,10 +268,12 @@ void displayLines() {
     tft.fillRect(0, STATUS_BAR_HEIGHT, SCREEN_WIDTH, SCREEN_HEIGHT - STATUS_BAR_HEIGHT - INPUT_LINE_HEIGHT, TFT_BLACK);
 
     int cursorY = STATUS_BAR_HEIGHT;
-    for (size_t i = 0; i < lines.size(); ++i) {
-        const String& line = lines[i];
-        bool mention = mentions[i];
-        
+    Buffer& currentBuffer = buffers[currentBufferIndex];
+
+    for (size_t i = 0; i < currentBuffer.lines.size(); ++i) {
+        const String& line = currentBuffer.lines[i];
+        bool mention = currentBuffer.mentions[i];
+
         tft.setCursor(0, cursorY);
 
         if (line.startsWith("JOIN ")) {
@@ -242,7 +287,7 @@ void displayLines() {
             tft.setTextColor(TFT_WHITE);
             tft.print(" has joined ");
             tft.setTextColor(TFT_CYAN);
-            tft.print(channel);
+            tft.print(currentBuffer.channel);
             cursorY += CHAR_HEIGHT;
         } else if (line.startsWith("PART ")) {
             tft.setTextColor(TFT_RED);
@@ -255,7 +300,7 @@ void displayLines() {
             tft.setTextColor(TFT_WHITE);
             tft.print(" has EMO-QUIT ");
             tft.setTextColor(TFT_CYAN);
-            tft.print(channel);
+            tft.print(currentBuffer.channel);
             cursorY += CHAR_HEIGHT;
         } else if (line.startsWith("QUIT ")) {
             tft.setTextColor(TFT_RED);
@@ -310,7 +355,6 @@ void displayLines() {
             tft.print(senderNick + " ");
             tft.setTextColor(TFT_WHITE);
             tft.print(actionMessage);
-
             cursorY += CHAR_HEIGHT;
         } else {
             int colonPos = line.indexOf(':');
@@ -334,16 +378,15 @@ void displayLines() {
     displayInputLine();
 }
 
-
-void addLine(String senderNick, String message, String type, bool mention = false) {
+void addLineToBuffer(Buffer& buffer, String senderNick, String message, String type, bool mention) {
     if (nickColors.find(senderNick) == nickColors.end())
         nickColors[senderNick] = generateRandomColor();
 
     String formattedMessage;
     if (type == "join") {
-        formattedMessage = "JOIN " + senderNick + " has joined " + String(channel);
+        formattedMessage = "JOIN " + senderNick + " has joined " + buffer.channel;
     } else if (type == "part") {
-        formattedMessage = "PART " + senderNick + " has EMO-QUIT " + String(channel);
+        formattedMessage = "PART " + senderNick + " has EMO-QUIT " + buffer.channel;
     } else if (type == "quit") {
         formattedMessage = "QUIT " + senderNick;
     } else if (type == "nick") {
@@ -356,96 +399,99 @@ void addLine(String senderNick, String message, String type, bool mention = fals
         formattedMessage = "NICK " + oldNick + " -> " + newNick;
     } else if (type == "kick") {
         formattedMessage = "KICK " + senderNick + message;
-    } else if (type == "mode") {
-        formattedMessage = "MODE " + message;
     } else if (type == "action") {
         formattedMessage = "* " + senderNick + " " + message;
+    } else if (type == "mode") {
+        formattedMessage = "MODE " + message;
     } else {
         formattedMessage = senderNick + ": " + message;
     }
 
     int linesRequired = calculateLinesRequired(formattedMessage);
 
-    while (lines.size() + linesRequired > MAX_LINES) {
-        lines.erase(lines.begin());
-        mentions.erase(mentions.begin());
+    while (buffer.lines.size() + linesRequired > MAX_LINES) {
+        buffer.lines.erase(buffer.lines.begin());
+        buffer.mentions.erase(buffer.mentions.begin());
     }
 
-    lines.push_back(formattedMessage);
-    mentions.push_back(mention);
+    buffer.lines.push_back(formattedMessage);
+    buffer.mentions.push_back(mention);
+}
+
+void addLine(String senderNick, String message, String type, bool mention = false) {
+    Buffer& currentBuffer = buffers[currentBufferIndex];
+    addLineToBuffer(currentBuffer, senderNick, message, type, mention);
 
     displayLines();
 }
 
-
-void displayDeviceInfo() {
-    tft.fillScreen(TFT_BLACK);
-    printDeviceInfo();
-}
-
 void loop() {
-    if (debugMode) {
-        if (millis() - debugStartTime > 10000) { // 10 seconds
-            debugMode = false;
-            // Clear the screen and return to the IRC interface
-            tft.fillScreen(TFT_BLACK);
-            displayLines();
+    if (ssid.isEmpty() && !enteringPassword) {
+        char incoming = getKeyboardInput();
+        if (incoming != 0) {
+            handleWiFiSelection(incoming);
+            lastActivityTime = millis();
+        }
+    } else if (enteringPassword) {
+        char incoming = getKeyboardInput();
+        if (incoming != 0) {
+            handlePasswordInput(incoming);
+            lastActivityTime = millis();
         }
     } else {
-        if (ssid.isEmpty()) {
-            char incoming = getKeyboardInput();
-            if (incoming != 0) {
-                handleWiFiSelection(incoming);
-                lastActivityTime = millis(); // Reset activity timer
-            }
+        unsigned long currentMillis = millis();
+
+        if (displayingTopic && currentMillis - lastTopicDisplayTime > 5000) { // Display topic for 5 seconds
+            displayingTopic = false;
+            lastStatusUpdateTime = currentMillis;
+            updateStatusBar();
+        } else if (!displayingTopic && currentMillis - lastStatusUpdateTime > 10000) { // Show topic every 10 seconds
+            displayingTopic = true;
+            lastTopicDisplayTime = currentMillis;
+            updateTopicOnStatusBar();
+        }
+
+        if (client.connected()) {
+            handleIRC();
         } else {
-            if (millis() - lastStatusUpdateTime > STATUS_UPDATE_INTERVAL) {
-                updateStatusBar();
-                lastStatusUpdateTime = millis();
-            }
-
-            if (client.connected()) {
-                handleIRC();
-            } else {
-                if (WiFi.status() == WL_CONNECTED) {
-                    displayCenteredText("CONNECTING TO " + String(server));
-                    if (connectToIRC()) {
-                        displayCenteredText("CONNECTED TO " + String(server));
-                        sendIRC("NICK " + String(nick));
-                        sendIRC("USER " + String(user) + " 0 * :" + String(realname));
-                    } else {
-                        displayCenteredText("CONNECTION FAILED");
-                        delay(1000);
-                    }
+            if (WiFi.status() == WL_CONNECTED) {
+                displayCenteredText("CONNECTING TO " + String(server));
+                if (connectToIRC()) {
+                    displayCenteredText("CONNECTED TO " + String(server));
+                    sendIRC("NICK " + String(nick));
+                    sendIRC("USER " + String(user) + " 0 * :" + String(realname));
                 } else {
-                    displayCenteredText("RECONNECTING TO WIFI");
-                    WiFi.begin(ssid.c_str(), password.c_str());
+                    displayCenteredText("CONNECTION FAILED");
+                    delay(1000);
                 }
+            } else {
+                displayCenteredText("RECONNECTING TO WIFI");
+                WiFi.begin(ssid.c_str(), password.c_str());
             }
+        }
 
-            if (readyToJoinChannel && millis() >= joinChannelTime) {
-                tft.fillScreen(TFT_BLACK);
-                updateStatusBar();
-                sendIRC("JOIN " + String(channel));
-                readyToJoinChannel = false;
-            }
+        if (readyToJoinChannel && currentMillis >= joinChannelTime) {
+            joinChannels();
+            tft.fillScreen(TFT_BLACK);
+            updateStatusBar();
+            readyToJoinChannel = false;
+        }
 
-            char incoming = getKeyboardInput();
-            if (incoming != 0) {
-                handleKeyboardInput(incoming);
-                lastActivityTime = millis(); // Reset activity timer
-            }
+        char incoming = getKeyboardInput();
+        if (incoming != 0) {
+            handleKeyboardInput(incoming);
+            lastActivityTime = millis(); // Reset activity timer
+        }
 
-            // Check for inactivity
-            if (screenOn && millis() - lastActivityTime > INACTIVITY_TIMEOUT) {
-                turnOffScreen(); // Turn off screen and backlight
-            }
+        // Check for inactivity
+        if (screenOn && millis() - lastActivityTime > INACTIVITY_TIMEOUT) {
+            turnOffScreen(); // Turn off screen and backlight
         }
     }
 }
 
 bool connectToIRC() {
-    Serial.println("Connecting to IRC...");
+    debugPrint("Connecting to IRC...");
     if (useSSL) {
         client.setInsecure();
         return client.connect(server, port);
@@ -457,7 +503,7 @@ bool connectToIRC() {
 
 void connectToWiFi() {
     WiFi.begin(ssid.c_str(), password.c_str());
-    Serial.println("Connecting to WiFi...");
+    debugPrint("Connecting to WiFi...");
     int attempts = 0;
     while (WiFi.status() != WL_CONNECTED && attempts < 10) { // Try to connect for up to 10 seconds
         delay(500);
@@ -465,27 +511,27 @@ void connectToWiFi() {
         attempts++;
     }
     if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("Connected to WiFi network: " + ssid);
+        debugPrint("Connected to WiFi network: " + ssid);
         displayCenteredText("CONNECTED TO " + ssid);
-        delay(1000);
         updateTimeFromNTP();
+        saveWiFiCredentials();  // Save credentials after successful connection
     } else {
         displayCenteredText("WIFI CONNECTION FAILED");
-        Serial.println("Failed to connect to WiFi.");
+        debugPrint("Failed to connect to WiFi.");
     }
 }
 
 void sendIRC(String command) {
     if (client.println(command))
-        Serial.println("IRC: >>> " + command);
+        debugPrint("IRC: >>> " + command);
     else
-        Serial.println("Failed to send: " + command);
+        debugPrint("Failed to send: " + command);
 }
 
 void handleIRC() {
     while (client.available()) {
         String line = client.readStringUntil('\n');
-        Serial.println("IRC: " + line);
+        debugPrint("IRC: " + line);
 
         int firstSpace = line.indexOf(' ');
         int secondSpace = line.indexOf(' ', firstSpace + 1);
@@ -499,6 +545,13 @@ void handleIRC() {
             if (command == "001") {
                 joinChannelTime = millis() + 2500;
                 readyToJoinChannel = true;
+            }
+            // Handle topic change
+            if (command == "332") { // RPL_TOPIC
+                int topicStart = line.indexOf(':', secondSpace + 1) + 1;
+                buffers[currentBufferIndex].topic = line.substring(topicStart);
+                topicOffset = 0; // Reset scrolling
+                topicUpdated = true;
             }
         }
 
@@ -522,65 +575,103 @@ void parseAndDisplay(String line) {
         if (command == "PRIVMSG") {
             int thirdSpace = line.indexOf(' ', secondSpace + 1);
             String target = line.substring(secondSpace + 1, thirdSpace);
-            if (target == String(channel)) {
-                int colonPos = line.indexOf(':', thirdSpace);
-                String message = line.substring(colonPos + 1);
-                String senderNick = line.substring(1, line.indexOf('!'));
-                bool mention = message.indexOf(nick) != -1;
+            int colonPos = line.indexOf(':', thirdSpace);
+            String message = line.substring(colonPos + 1);
+            String senderNick = line.substring(1, line.indexOf('!'));
+            bool mention = message.indexOf(nick) != -1;
 
-                // This doesn't work for some annoying reason... even with \001
-                if (message.startsWith("\x01ACTION ") && message.endsWith("\x01")) {
-                    String actionMessage = message.substring(8, message.length() - 1);
+            if (message.startsWith("\x01" "ACTION ") && message.endsWith("\x01")) {
+                String actionMessage = message.substring(8, message.length() - 1); // Substring might need adjustment
+                if (target == buffers[currentBufferIndex].channel) {
                     addLine(senderNick, actionMessage, "action");
                 } else {
+                    addLineToBuffer(getBufferByChannel(target), senderNick, actionMessage, "action", mention);
+                }
+            } else {
+                if (target == buffers[currentBufferIndex].channel) {
                     addLine(senderNick, message, "message", mention);
+                } else {
+                    addLineToBuffer(getBufferByChannel(target), senderNick, message, "message", mention);
                 }
             }
-        } else if (command == "JOIN" && line.indexOf(channel) != -1) {
+        } else if (command == "JOIN") {
             String senderNick = line.substring(1, line.indexOf('!'));
-            addLine(senderNick, " has joined " + String(channel), "join");
-        } else if (command == "PART" && line.indexOf(channel) != -1) {
+            String targetChannel = line.substring(secondSpace + 1);
+            if (targetChannel == buffers[currentBufferIndex].channel) {
+                addLine(senderNick, " has joined " + targetChannel, "join", false);
+            } else {
+                addLineToBuffer(getBufferByChannel(targetChannel), senderNick, " has joined " + targetChannel, "join", false);
+            }
+        } else if (command == "PART") {
             String senderNick = line.substring(1, line.indexOf('!'));
-            addLine(senderNick, " has EMO-QUIT " + String(channel), "part");
-        } else if (command == "QUIT" && line.indexOf(channel) != -1) {
+            String targetChannel = line.substring(secondSpace + 1);
+            if (targetChannel == buffers[currentBufferIndex].channel) {
+                addLine(senderNick, " has EMO-QUIT " + targetChannel, "part", false);
+            } else {
+                addLineToBuffer(getBufferByChannel(targetChannel), senderNick, " has EMO-QUIT " + targetChannel, "part", false);
+            }
+        } else if (command == "QUIT") {
             String senderNick = line.substring(1, line.indexOf('!'));
-            addLine(senderNick, "", "quit");
+            for (auto& buffer : buffers) {
+                if (buffer.channel == buffers[currentBufferIndex].channel) {
+                    addLine(senderNick, "", "quit", false);
+                } else {
+                    addLineToBuffer(buffer, senderNick, "", "quit", false);
+                }
+            }
         } else if (command == "NICK") {
             String oldNick = line.substring(1, line.indexOf('!'));
             String newNick = line.substring(line.lastIndexOf(':') + 1);
-            addLine(oldNick, " -> " + newNick, "nick");
+            for (auto& buffer : buffers) {
+                if (buffer.channel == buffers[currentBufferIndex].channel) {
+                    addLine(oldNick, " -> " + newNick, "nick", false);
+                } else {
+                    addLineToBuffer(buffer, oldNick, " -> " + newNick, "nick", false);
+                }
+            }
         } else if (command == "KICK") {
             int thirdSpace = line.indexOf(' ', secondSpace + 1);
             int fourthSpace = line.indexOf(' ', thirdSpace + 1);
             String kicker = line.substring(1, line.indexOf('!'));
             String kicked = line.substring(thirdSpace + 1, fourthSpace);
-            addLine(kicked, " by " + kicker, "kick");
+            String targetChannel = line.substring(secondSpace + 1, thirdSpace);
+            if (targetChannel == buffers[currentBufferIndex].channel) {
+                addLine(kicked, " by " + kicker, "kick", false);
+            } else {
+                addLineToBuffer(getBufferByChannel(targetChannel), kicked, " by " + kicker, "kick", false);
+            }
         } else if (command == "MODE") {
             String modeChange = line.substring(secondSpace + 1);
-            addLine("", modeChange, "mode");
+            for (auto& buffer : buffers) {
+                if (buffer.channel == buffers[currentBufferIndex].channel) {
+                    addLine("", modeChange, "mode", false);
+                } else {
+                    addLineToBuffer(buffer, "", modeChange, "mode", false);
+                }
+            }
         }
     }
 }
 
-
+Buffer& getBufferByChannel(String channel) {
+    for (auto& buffer : buffers) {
+        if (buffer.channel == channel) {
+            return buffer;
+        }
+    }
+    // If no buffer found, create a new one (optional, depending on use case)
+    Buffer newBuffer;
+    newBuffer.channel = channel;
+    buffers.push_back(newBuffer);
+    return buffers.back();
+}
 
 void handleKeyboardInput(char key) {
-    if (key == '\n' || key == '\r') { // Enter
-        if (inputBuffer.startsWith("/debug")) {
-            debugMode = true;
-            debugStartTime = millis();
-            displayDeviceInfo();
-            inputBuffer = "";
-        } else if (inputBuffer.startsWith("/raw ")) {
-            String rawCommand = inputBuffer.substring(5);
-            sendRawCommand(rawCommand);
-        } else if (inputBuffer.startsWith("/me ")) {
-            String actionMessage = inputBuffer.substring(4);
-            sendIRC("PRIVMSG " + String(channel) + " :\001ACTION " + actionMessage + "\001");
-            addLine(nick, actionMessage, "action");
-            inputBuffer = "";
+    if (key == '\n' || key == '\r') {
+        if (inputBuffer.startsWith("/")) {
+            handleCommand(inputBuffer);
         } else {
-            sendIRC("PRIVMSG " + String(channel) + " :" + inputBuffer);
+            sendIRC("PRIVMSG " + buffers[currentBufferIndex].channel + " :" + inputBuffer);
             addLine(nick, inputBuffer, "message");
         }
         inputBuffer = "";
@@ -601,20 +692,83 @@ void handleKeyboardInput(char key) {
     } else {
         inputBuffer += key;
         displayInputLine();
-        lastActivityTime = millis(); // Reset activity timer
+        lastActivityTime = millis();
         if (!screenOn) {
-            turnOnScreen(); // Turn on screen and backlight
+            turnOnScreen();
         }
     }
 }
 
+void handleCommand(String command) {
+    if (command.startsWith("/join ")) {
+        String newChannel = command.substring(6);
+        bool alreadyInChannel = false;
+        for (auto & buffer : buffers) {
+            if (buffer.channel == newChannel) {
+                alreadyInChannel = true;
+                break;
+            }
+        }
+        if (!alreadyInChannel) {
+            Buffer newBuffer;
+            newBuffer.channel = newChannel;
+            buffers.push_back(newBuffer);
+            sendIRC("JOIN " + newChannel);
+            currentBufferIndex = buffers.size() - 1;
+            displayLines();
+        }
+    } else if (command.startsWith("/part ")) {
+        String partChannel = command.substring(6);
+        for (auto it = buffers.begin(); it != buffers.end(); ++it) {
+            if (it->channel == partChannel) {
+                sendIRC("PART " + partChannel);
+                buffers.erase(it);
+                if (currentBufferIndex >= buffers.size()) {
+                    currentBufferIndex = 0;
+                }
+                displayLines();
+                break;
+            }
+        }
+    } else if (command.startsWith("/msg ")) {
+        int firstSpace = command.indexOf(' ', 5);
+        String target = command.substring(5, firstSpace);
+        String message = command.substring(firstSpace + 1);
+        sendIRC("PRIVMSG " + target + " :" + message);
+        addLine(nick, message, "message");
+    } else if (command.startsWith("/nick ")) {
+        String newNick = command.substring(6);
+        sendIRC("NICK " + newNick);
+        nick = newNick;
+    } else if (command.startsWith("/")) {
+        if (command == "/debug") {
+            debugEnabled = true;
+            Serial.begin(115200);
+            debugPrint("Debugging enabled");
+        } else {
+            int bufferIndex = command.substring(1).toInt() - 1;
+            if (bufferIndex >= 0 && bufferIndex < buffers.size()) {
+                currentBufferIndex = bufferIndex;
+                displayLines();
+            }
+        }
+    } else if (inputBuffer.startsWith("/me ")) {
+        String actionMessage = inputBuffer.substring(4);
+        sendIRC("PRIVMSG " + String(currentBufferIndex) + " :\001ACTION " + actionMessage + "\001");
+        addLine(nick, actionMessage, "action");
+        inputBuffer = "";
+    } else if (command.startsWith("/raw ")) {
+        String rawCommand = command.substring(5);
+        sendRawCommand(rawCommand);
+    }
+}
 
 void sendRawCommand(String command) {
     if (client.connected()) {
         sendIRC(command);
-        Serial.println("Sent raw command: " + command);
+        debugPrint("Sent raw command: " + command);
     } else {
-        Serial.println("Failed to send raw command: Not connected to IRC");
+        debugPrint("Failed to send raw command: Not connected to IRC");
     }
 }
 
@@ -624,8 +778,6 @@ char getKeyboardInput() {
     if (Wire.available()) {
         incoming = Wire.read();
         if (incoming != (char)0x00) {
-            Serial.print("Key: ");
-            Serial.println(incoming);
             return incoming;
         }
     }
@@ -669,6 +821,7 @@ int calculateLinesRequired(String message) {
     return linesRequired;
 }
 
+/* shoutz to e for the color support */
 uint16_t getColorFromCode(int colorCode) {
     switch (colorCode) {
         case 0: return TFT_WHITE;
@@ -774,7 +927,6 @@ uint16_t getColorFromCode(int colorCode) {
     }
 }
 
-
 uint32_t generateRandomColor() {
     return tft.color565(random(0, 255), random(0, 255), random(0, 255));
 }
@@ -783,6 +935,7 @@ void handlePasswordInput(char key) {
     if (key == '\n' || key == '\r') { // Enter
         password = inputBuffer;
         inputBuffer = "";
+        enteringPassword = false;
         connectToWiFi();
     } else if (key == '\b') { // Backspace
         if (inputBuffer.length() > 0) {
@@ -812,10 +965,9 @@ void updateSelectedNetwork(int delta) {
 }
 
 void scanWiFiNetworks() {
-    Serial.println("Scanning for WiFi networks...");
+    debugPrint("Scanning for WiFi networks...");
     int n = WiFi.scanNetworks();
-    Serial.print("Total number of networks found: ");
-    Serial.println(n);
+    debugPrint("Total number of networks found: " + String(n));
     for (int i = 0; i < n && i < 100; i++) {
         WiFiNetwork net;
         net.index = i + 1;
@@ -874,22 +1026,13 @@ void handleWiFiSelection(char key) {
         ssid = wifiNetworks[selectedNetworkIndex].ssid;
         if (wifiNetworks[selectedNetworkIndex].encryption == "Secured") {
             inputBuffer = "";
+            enteringPassword = true;
             tft.fillScreen(TFT_BLACK);
             tft.setTextSize(1);
             tft.setTextColor(TFT_WHITE);
             tft.setCursor(0, STATUS_BAR_HEIGHT);
             tft.println("ENTER PASSWORD:");
             displayPasswordInputLine();
-            // Switch to password input mode
-            while (true) {
-                char incoming = getKeyboardInput();
-                if (incoming != 0) {
-                    handlePasswordInput(incoming);
-                    if (incoming == '\n' || incoming == '\r') {
-                        break;
-                    }
-                }
-            }
         } else {
             connectToWiFi();
         }
@@ -897,16 +1040,22 @@ void handleWiFiSelection(char key) {
 }
 
 void updateStatusBar() {
-    Serial.println("Updating status bar...");
+    debugPrint("Updating status bar...");
+    updateTimeOnStatusBar();
+    updateWiFiOnStatusBar();
+    updateBatteryOnStatusBar();
+}
+
+void updateTimeOnStatusBar() {
     uint16_t darkerGrey = tft.color565(25, 25, 25);
     tft.fillRect(0, 0, SCREEN_WIDTH, STATUS_BAR_HEIGHT, darkerGrey);
 
-    // Display time
+    // Display time and channel name
     struct tm timeinfo;
-    char timeStr[9];
+    char timeStr[20];
     if (!getLocalTime(&timeinfo)) {
         // Default time if NTP sync fails
-        sprintf(timeStr, "12:00 AM");
+        sprintf(timeStr, "12:00 AM %s", buffers[currentBufferIndex].channel.c_str());
     } else {
         int hour = timeinfo.tm_hour;
         char ampm[] = "AM";
@@ -918,12 +1067,15 @@ void updateStatusBar() {
             }
             strcpy(ampm, "PM");
         }
-        sprintf(timeStr, "%02d:%02d %s", hour, timeinfo.tm_min, ampm);
+        sprintf(timeStr, "%02d:%02d %s %s", hour, timeinfo.tm_min, ampm, buffers[currentBufferIndex].channel.c_str());
     }
     tft.setTextDatum(ML_DATUM);
     tft.setTextColor(TFT_WHITE, darkerGrey);
     tft.drawString(timeStr, 0, STATUS_BAR_HEIGHT / 2);
+}
 
+void updateWiFiOnStatusBar() {
+    uint16_t darkerGrey = tft.color565(25, 25, 25);
     char wifiStr[15];
     int wifiSignal = 0;
     if (WiFi.status() != WL_CONNECTED) {
@@ -947,7 +1099,10 @@ void updateStatusBar() {
         tft.setTextColor(getColorFromPercentage(wifiSignal), darkerGrey);
         tft.drawString(wifiStr + 6, SCREEN_WIDTH - 100, STATUS_BAR_HEIGHT / 2);
     }
+}
 
+void updateBatteryOnStatusBar() {
+    uint16_t darkerGrey = tft.color565(25, 25, 25);
     int batteryLevel = BL.getBatteryChargeLevel();
     char batteryStr[15];
     sprintf(batteryStr, "Batt: %d%%", batteryLevel);
@@ -958,6 +1113,15 @@ void updateStatusBar() {
     tft.drawString(batteryStr + 5, SCREEN_WIDTH - 5, STATUS_BAR_HEIGHT / 2);
 }
 
+void updateTopicOnStatusBar() {
+    if (buffers.empty() || buffers[currentBufferIndex].topic.isEmpty()) return;
+
+    tft.fillRect(0, 0, SCREEN_WIDTH, STATUS_BAR_HEIGHT, TFT_BLACK);  // Clear the status bar area
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextColor(TFT_WHITE, TFT_BLACK);
+    tft.drawString(buffers[currentBufferIndex].topic, SCREEN_WIDTH / 2, STATUS_BAR_HEIGHT / 2);
+}
+
 uint16_t getColorFromPercentage(int rssi) {
     if (rssi > -50) return TFT_GREEN;
     else if (rssi > -60) return TFT_YELLOW;
@@ -966,114 +1130,25 @@ uint16_t getColorFromPercentage(int rssi) {
 }
 
 void updateTimeFromNTP() {
-    Serial.println("Syncing time with NTP server...");
     configTime(-5 * 3600, 0, "pool.ntp.org", "time.nist.gov");
 
-    for (int i = 0; i < 10; ++i) { // Try up to 10 times
+    for (int i = 0; i < 10; ++i) {
         delay(2000);
         struct tm timeinfo;
         if (getLocalTime(&timeinfo)) {
-            Serial.println(&timeinfo, "Time synchronized: %A, %B %d %Y %H:%M:%S");
             return;
-        } else {
-            Serial.println("Failed to synchronize time, retrying...");
         }
     }
-
-    Serial.println("Failed to synchronize time after multiple attempts.");
 }
 
-String formatBytes(size_t bytes) {
-    if (bytes < 1024) {
-        return String(bytes) + " B";
-    } else if (bytes < (1024 * 1024)) {
-        return String(bytes / 1024.0, 2) + " KB";
-    } else if (bytes < (1024 * 1024 * 1024)) {
-        return String(bytes / 1024.0 / 1024.0, 2) + " MB";
-    } else {
-        return String(bytes / 1024.0 / 1024.0 / 1024.0, 2) + " GB";
+void joinChannels() {
+    for (auto& buffer : buffers) {
+        sendIRC("JOIN " + buffer.channel);
     }
 }
 
-void printDeviceInfo() {
-    // Get MAC Address
-    uint8_t mac[6];
-    esp_efuse_mac_get_default(mac);
-    String macAddress = String(mac[0], HEX) + ":" + String(mac[1], HEX) + ":" +
-                        String(mac[2], HEX) + ":" + String(mac[3], HEX) + ":" +
-                        String(mac[4], HEX) + ":" + String(mac[5], HEX);
-
-    // Get Chip Info
-    uint32_t chipId = ESP.getEfuseMac(); // Unique ID
-    esp_chip_info_t chip_info;
-    esp_chip_info(&chip_info);
-    String chipInfo = String(chip_info.model) + " Rev " + String(chip_info.revision) + ", " + String(chip_info.cores) + " cores, " +  String(ESP.getCpuFreqMHz()) + " MHz";
-
-    // Get Flash Info
-    size_t flashSize = spi_flash_get_chip_size();
-    size_t flashUsed = ESP.getFlashChipSize() - ESP.getFreeSketchSpace();
-    String flashInfo = formatBytes(flashUsed) + " / " + formatBytes(flashSize);
-    
-    // Get PSRAM Info
-    size_t total_psram = ESP.getPsramSize();
-    size_t free_psram = ESP.getFreePsram();
-    String psramInfo = formatBytes(total_psram - free_psram) + " / " + formatBytes(total_psram);
-
-    // Get Heap Info
-    size_t total_heap = ESP.getHeapSize();
-    size_t free_heap = ESP.getFreeHeap();
-    String heapInfo = formatBytes(total_heap - free_heap) + " / " + formatBytes(total_heap);
-
-    // Get WiFi Info
-    String wifiInfo = "Not connected";
-    String wifiSSID = "";
-    String wifiChannel = "";
-    String wifiSignal = "";
-    String wifiLocalIP = "";
-    String wifiGatewayIP = "";
-    if (WiFi.status() == WL_CONNECTED) {
-        wifiSSID = WiFi.SSID();
-        wifiChannel = String(WiFi.channel());
-        wifiSignal = String(WiFi.RSSI()) + " dBm";
-        wifiLocalIP = WiFi.localIP().toString();
-        wifiGatewayIP = WiFi.gatewayIP().toString();
-    }
-
-    // Print to Serial Monitor
-    Serial.println("Chip ID: " + String(chipId, HEX));
-    Serial.println("MAC Address: " + macAddress);
-    Serial.println("Chip Info: " + chipInfo);
-    Serial.println("Memory:");
-    Serial.println("  Flash: " + flashInfo);
-    Serial.println("  PSRAM: " + psramInfo);
-    Serial.println("  Heap: " + heapInfo);
-    Serial.println("WiFi Info: " + wifiInfo);
-    if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("  SSID: " + wifiSSID);
-        Serial.println("  Channel: " + wifiChannel);
-        Serial.println("  Signal: " + wifiSignal);
-        Serial.println("  Local IP: " + wifiLocalIP);
-        Serial.println("  Gateway IP: " + wifiGatewayIP);
-    }
-
-    // Display on TFT
-    tft.fillScreen(TFT_BLACK);
-    int line = 0;
-    tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("Chip ID:       "); tft.setTextColor(TFT_WHITE); tft.println(String(chipId, HEX)); line++;
-    tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("MAC Address:   "); tft.setTextColor(TFT_WHITE); tft.println(macAddress); line++;
-    tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("Chip Info:     "); tft.setTextColor(TFT_WHITE); tft.println(chipInfo); line++;
-    tft.setCursor(0, line * 16); tft.setTextColor(TFT_CYAN); tft.print("Memory:        "); tft.setTextColor(TFT_WHITE); tft.println(""); line++;
-    tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  Flash:       "); tft.setTextColor(TFT_WHITE); tft.println(flashInfo); line++;
-    tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  PSRAM:       "); tft.setTextColor(TFT_WHITE); tft.println(psramInfo); line++;
-    tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  Heap:        "); tft.setTextColor(TFT_WHITE); tft.println(heapInfo); line++;
-    if (WiFi.status() == WL_CONNECTED) {
-        tft.setCursor(0, line * 16); tft.setTextColor(TFT_CYAN); tft.print("WiFi Info:     "); tft.setTextColor(TFT_WHITE); tft.println(""); line++;
-        tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  SSID:        "); tft.setTextColor(TFT_WHITE); tft.println(wifiSSID); line++;
-        tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  Channel:     "); tft.setTextColor(TFT_WHITE); tft.println(wifiChannel); line++;
-        tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  Signal:      "); tft.setTextColor(TFT_WHITE); tft.println(wifiSignal); line++;
-        tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  Local IP:    "); tft.setTextColor(TFT_WHITE); tft.println(wifiLocalIP); line++;
-        tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  Gateway IP:  "); tft.setTextColor(TFT_WHITE); tft.println(wifiGatewayIP); line++;
-    } else {
-        tft.setCursor(0, line * 16); tft.setTextColor(TFT_CYAN); tft.print("WiFi Info:     "); tft.setTextColor(TFT_WHITE); tft.println("Not connected"); line++;
-    }
+void saveWiFiCredentials() {
+    preferences.putString("ssid", ssid);
+    preferences.putString("password", password);
+    debugPrint("WiFi credentials saved.");
 }
