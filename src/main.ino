@@ -140,7 +140,7 @@ void setup() {
     }
 
     randomSeed(analogRead(0));
-    int randomNum = random(1000, 1000);
+    int randomNum = random(1000, 10000);
     nick = "ACID_" + String(randomNum);
 
     Buffer defaultBuffer;
@@ -427,6 +427,14 @@ void addLine(String senderNick, String message, String type, bool mention = fals
 }
 
 void loop() {
+    unsigned long currentMillis = millis();
+    
+    // Update the status bar if enough time has passed
+    if (currentMillis - lastStatusUpdateTime >= STATUS_UPDATE_INTERVAL) {
+        updateStatusBar();
+        lastStatusUpdateTime = currentMillis;
+    }
+
     if (ssid.isEmpty() && !enteringPassword) {
         char incoming = getKeyboardInput();
         if (incoming != 0) {
@@ -440,8 +448,6 @@ void loop() {
             lastActivityTime = millis();
         }
     } else {
-        unsigned long currentMillis = millis();
-
         if (displayingTopic && currentMillis - lastTopicDisplayTime > 5000) { // Display topic for 5 seconds
             displayingTopic = false;
             lastStatusUpdateTime = currentMillis;
