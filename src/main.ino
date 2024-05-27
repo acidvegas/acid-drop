@@ -160,13 +160,13 @@ int renderFormattedMessage(String message, int cursorY, int lineHeight, bool hig
             tft.setTextFont(1);
         } else {
             if (highlightNick && !nickHighlighted && message.substring(i).startsWith(nick)) {
-                tft.setTextColor(TFT_YELLOW);
+                tft.setTextColor(TFT_YELLOW, bgColor); // Set both foreground and background color
                 for (char nc : nick) {
                     tft.print(nc);
                     i++;
                 }
                 i--; // Adjust for the loop increment
-                tft.setTextColor(TFT_WHITE);
+                tft.setTextColor(TFT_WHITE, bgColor); // Reset to white foreground with current background
                 nickHighlighted = true;
             } else {
                 if (tft.getCursorX() + tft.textWidth(String(c)) > SCREEN_WIDTH) {
@@ -180,6 +180,7 @@ int renderFormattedMessage(String message, int cursorY, int lineHeight, bool hig
                     tft.setCursor(tft.getCursorX() + spaceWidth, tft.getCursorY());
                 } else {
                     // Ensure that background color is applied to characters
+                    tft.fillRect(tft.getCursorX(), tft.getCursorY(), tft.textWidth(String(c)), lineHeight, bgColor);
                     tft.setTextColor(fgColor, bgColor);
                     tft.print(c);
                 }
@@ -203,7 +204,6 @@ int renderFormattedMessage(String message, int cursorY, int lineHeight, bool hig
     cursorY += lineHeight; // Add line height after printing the message
     return cursorY; // Return the new cursor Y position for the next line
 }
-
 
 void turnOffScreen() {
     Serial.println("Screen turned off");
