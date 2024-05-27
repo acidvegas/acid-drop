@@ -140,7 +140,8 @@ void setup() {
     }
 
     randomSeed(analogRead(0));
-    nick = "s4d";
+    int randomNum = random(1000, 1000);
+    nick = "ACID_" + String(randomNum);
 
     Buffer defaultBuffer;
     defaultBuffer.channel = "#comms";
