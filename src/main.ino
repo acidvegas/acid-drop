@@ -21,8 +21,8 @@
 #define MAX_LINES ((SCREEN_HEIGHT - INPUT_LINE_HEIGHT - STATUS_BAR_HEIGHT) / (CHAR_HEIGHT + LINE_SPACING))
 
 #define BOARD_BAT_ADC 4 // Define the ADC pin used for battery reading
-#define CONV_FACTOR 1.8  // Conversion factor for the ADC to voltage conversion
-#define READS 20         // Number of readings for averaging
+#define CONV_FACTOR 1.8 // Conversion factor for the ADC to voltage conversion
+#define READS 20        // Number of readings for averaging
 Pangodream_18650_CL BL(BOARD_BAT_ADC, CONV_FACTOR, READS);
 
 TFT_eSPI tft = TFT_eSPI();
@@ -299,6 +299,19 @@ void displayLines() {
             tft.setTextColor(TFT_WHITE);
             tft.print(modeChange);
             cursorY += CHAR_HEIGHT;
+        } else if (line.startsWith("* ")) { // Check for action message
+            int spacePos = line.indexOf(' ', 2);
+            String senderNick = line.substring(2, spacePos);
+            String actionMessage = line.substring(spacePos + 1);
+
+            tft.setTextColor(TFT_WHITE);
+            tft.print("* ");
+            tft.setTextColor(nickColors[senderNick]);
+            tft.print(senderNick + " ");
+            tft.setTextColor(TFT_WHITE);
+            tft.print(actionMessage);
+
+            cursorY += CHAR_HEIGHT;
         } else {
             int colonPos = line.indexOf(':');
             String senderNick = line.substring(0, colonPos);
@@ -320,6 +333,7 @@ void displayLines() {
 
     displayInputLine();
 }
+
 
 void addLine(String senderNick, String message, String type, bool mention = false) {
     if (nickColors.find(senderNick) == nickColors.end())
@@ -344,6 +358,8 @@ void addLine(String senderNick, String message, String type, bool mention = fals
         formattedMessage = "KICK " + senderNick + message;
     } else if (type == "mode") {
         formattedMessage = "MODE " + message;
+    } else if (type == "action") {
+        formattedMessage = "* " + senderNick + " " + message;
     } else {
         formattedMessage = senderNick + ": " + message;
     }
@@ -360,6 +376,7 @@ void addLine(String senderNick, String message, String type, bool mention = fals
 
     displayLines();
 }
+
 
 void displayDeviceInfo() {
     tft.fillScreen(TFT_BLACK);
@@ -510,7 +527,14 @@ void parseAndDisplay(String line) {
                 String message = line.substring(colonPos + 1);
                 String senderNick = line.substring(1, line.indexOf('!'));
                 bool mention = message.indexOf(nick) != -1;
-                addLine(senderNick, message, "message", mention);
+
+                // This doesn't work for some annoying reason... even with \001
+                if (message.startsWith("\x01ACTION ") && message.endsWith("\x01")) {
+                    String actionMessage = message.substring(8, message.length() - 1);
+                    addLine(senderNick, actionMessage, "action");
+                } else {
+                    addLine(senderNick, message, "message", mention);
+                }
             }
         } else if (command == "JOIN" && line.indexOf(channel) != -1) {
             String senderNick = line.substring(1, line.indexOf('!'));
@@ -538,6 +562,8 @@ void parseAndDisplay(String line) {
     }
 }
 
+
+
 void handleKeyboardInput(char key) {
     if (key == '\n' || key == '\r') { // Enter
         if (inputBuffer.startsWith("/debug")) {
@@ -548,6 +574,11 @@ void handleKeyboardInput(char key) {
         } else if (inputBuffer.startsWith("/raw ")) {
             String rawCommand = inputBuffer.substring(5);
             sendRawCommand(rawCommand);
+        } else if (inputBuffer.startsWith("/me ")) {
+            String actionMessage = inputBuffer.substring(4);
+            sendIRC("PRIVMSG " + String(channel) + " :\001ACTION " + actionMessage + "\001");
+            addLine(nick, actionMessage, "action");
+            inputBuffer = "";
         } else {
             sendIRC("PRIVMSG " + String(channel) + " :" + inputBuffer);
             addLine(nick, inputBuffer, "message");
@@ -892,9 +923,7 @@ void printDeviceInfo() {
     uint32_t chipId = ESP.getEfuseMac(); // Unique ID
     esp_chip_info_t chip_info;
     esp_chip_info(&chip_info);
-    String chipInfo = String(chip_info.model) + " Rev " + String(chip_info.revision) +
-                      ", " + String(chip_info.cores) + " cores, " +
-                      String(ESP.getCpuFreqMHz()) + " MHz";
+    String chipInfo = String(chip_info.model) + " Rev " + String(chip_info.revision) + ", " + String(chip_info.cores) + " cores, " +  String(ESP.getCpuFreqMHz()) + " MHz";
 
     // Get Flash Info
     size_t flashSize = spi_flash_get_chip_size();
