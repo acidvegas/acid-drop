@@ -43,6 +43,7 @@ The device will scan for WiFi networks on boot. Once the list is displayed, you 
 | --------------- | --------------------------- |
 | `/debug`        | Show hardware information   |
 | `/me <message>` | Send an ACTION message      |
+| `/nick <new>`   | Change your NICK on IRC     |
 | `/raw <data>`   | Send RAW data to the server |
 
 # Debugging over Serial
