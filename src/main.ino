@@ -1,3 +1,4 @@
+#include <Preferences.h>
 #include <TFT_eSPI.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
@@ -74,6 +75,8 @@ struct WiFiNetwork {
 std::vector<WiFiNetwork> wifiNetworks;
 int selectedNetworkIndex = 0;
 
+Preferences preferences;
+
 void setup() {
     Serial.begin(115200);
     Serial.println("Booting device...");
@@ -92,18 +95,29 @@ void setup() {
 
     Serial.println("TFT initialized");
 
-    displayXBM();
-    delay(3000);
-    displayCenteredText("SCANNING WIFI");
-    delay(1000);
-    scanWiFiNetworks();
-    displayWiFiNetworks();
+    preferences.begin("wifi", false); // Initialize preferences with the namespace "wifi"
+    ssid = preferences.getString("ssid", "");
+    password = preferences.getString("password", "");
+
+    if (ssid.length() > 0 && password.length() > 0) {
+        connectToWiFi();
+        if (WiFi.status() != WL_CONNECTED) {
+            scanWiFiNetworks();
+            displayWiFiNetworks();
+        }
+    } else {
+        displayXBM();
+        delay(3000);
+        displayCenteredText("SCANNING WIFI");
+        delay(1000);
+        scanWiFiNetworks();
+        displayWiFiNetworks();
+    }
 
     randomSeed(analogRead(0));
     int randomNum = random(1000, 10000);
     nick = "ACID_" + String(randomNum);
 }
-
 
 int renderFormattedMessage(String message, int cursorY, int lineHeight, bool highlightNick = false) {
     uint16_t fgColor = TFT_WHITE;
@@ -475,11 +489,24 @@ void connectToWiFi() {
         displayCenteredText("CONNECTED TO " + ssid);
         delay(1000);
         updateTimeFromNTP();
+
+        // Save WiFi credentials to preferences
+        preferences.putString("ssid", ssid);
+        preferences.putString("password", password);
     } else {
         displayCenteredText("WIFI CONNECTION FAILED");
         Serial.println("Failed to connect to WiFi.");
+        
+        // Clear stored credentials
+        preferences.remove("ssid");
+        preferences.remove("password");
+
+        // Display WiFi networks for selection
+        scanWiFiNetworks();
+        displayWiFiNetworks();
     }
 }
+
 
 void sendIRC(String command) {
     if (client.println(command))
@@ -924,10 +951,12 @@ void handleWiFiSelection(char key) {
                 }
             }
         } else {
+            password = ""; // Open networks have no password
             connectToWiFi();
         }
     }
 }
+
 
 void updateStatusBar() {
     Serial.println("Updating status bar...");
