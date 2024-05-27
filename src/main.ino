@@ -323,18 +323,16 @@ void displayLines() {
             String senderNick = line.substring(0, colonIndex);
             String message = line.substring(colonIndex + 1);
 
-            if (mention) {
-                tft.setTextColor(TFT_YELLOW, TFT_RED);
-            } else {
-                tft.setTextColor(nickColors[senderNick]);
-            }
+            tft.setTextColor(nickColors[senderNick]);
             tft.print(senderNick);
             tft.setTextColor(TFT_WHITE);
-            tft.print(":" + message);
-            cursorY += CHAR_HEIGHT;
+            cursorY = renderFormattedMessage(":" + message, cursorY, CHAR_HEIGHT, mention);
         }
     }
+
+    displayInputLine();
 }
+
 
 void addLine(String senderNick, String message, String type, uint16_t errorColor = TFT_WHITE, uint16_t reasonColor = TFT_WHITE) {
     if (type != "error" && nickColors.find(senderNick) == nickColors.end())
