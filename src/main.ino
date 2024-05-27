@@ -22,8 +22,8 @@
 #define MAX_LINES ((SCREEN_HEIGHT - INPUT_LINE_HEIGHT - STATUS_BAR_HEIGHT) / (CHAR_HEIGHT + LINE_SPACING))
 
 #define BOARD_BAT_ADC 4 // Define the ADC pin used for battery reading
-#define CONV_FACTOR 1.8  // Conversion factor for the ADC to voltage conversion
-#define READS 20         // Number of readings for averaging
+#define CONV_FACTOR 1.8 // Conversion factor for the ADC to voltage conversion
+#define READS 20        // Number of readings for averaging
 Pangodream_18650_CL BL(BOARD_BAT_ADC, CONV_FACTOR, READS);
 
 TFT_eSPI tft = TFT_eSPI();
@@ -41,7 +41,6 @@ String nick = "";
 
 bool debugMode = false;
 unsigned long debugStartTime = 0;
-
 
 // IRC connection
 const char* server = "irc.supernets.org";
@@ -347,7 +346,6 @@ void displayLines() {
     displayInputLine();
 }
 
-
 void addLine(String senderNick, String message, String type, uint16_t errorColor = TFT_WHITE, uint16_t reasonColor = TFT_WHITE) {
     if (type != "error" && nickColors.find(senderNick) == nickColors.end())
         nickColors[senderNick] = generateRandomColor();
@@ -608,8 +606,6 @@ void parseAndDisplay(String line) {
     }
 }
 
-
-
 void handleKeyboardInput(char key) {
     if (key == '\n' || key == '\r') { // Enter
         if (inputBuffer.startsWith("/nick ")) {
@@ -705,7 +701,6 @@ void displayInputLine() {
 
     tft.print("> " + displayInput);
 }
-
 
 void displayCenteredText(String text) {
     tft.fillScreen(TFT_BLACK);
@@ -951,19 +946,17 @@ void handleWiFiSelection(char key) {
                 }
             }
         } else {
-            password = ""; // Open networks have no password
+            password = "";
             connectToWiFi();
         }
     }
 }
-
 
 void updateStatusBar() {
     Serial.println("Updating status bar...");
     uint16_t darkerGrey = tft.color565(25, 25, 25);
     tft.fillRect(0, 0, SCREEN_WIDTH, STATUS_BAR_HEIGHT, darkerGrey);
 
-    // Display time
     struct tm timeinfo;
     char timeStr[9];
     if (!getLocalTime(&timeinfo)) {
@@ -1020,10 +1013,10 @@ void updateStatusBar() {
     tft.drawString(batteryStr + 5, SCREEN_WIDTH - 5, STATUS_BAR_HEIGHT / 2);
 }
 
-uint16_t getColorFromPercentage(int rssi) {
-    if (rssi > -50) return TFT_GREEN;
-    else if (rssi > -60) return TFT_YELLOW;
-    else if (rssi > -70) return TFT_ORANGE;
+uint16_t getColorFromPercentage(int percentage) {
+    if (percentage > 75) return TFT_GREEN;
+    else if (percentage > 50) return TFT_YELLOW;
+    else if (percentage > 25) return TFT_ORANGE;
     else return TFT_RED;
 }
 
