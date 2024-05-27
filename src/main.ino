@@ -293,50 +293,51 @@ void displayLines() {
             tft.print(kicker);
             cursorY += CHAR_HEIGHT;
         } else if (line.startsWith("MODE ")) {
-            tft.setTextColor(TFT_BLUE);
+            tft.setTextColor(TFT_YELLOW);
             tft.print("MODE ");
             String modeChange = line.substring(5);
             tft.setTextColor(TFT_WHITE);
             tft.print(modeChange);
             cursorY += CHAR_HEIGHT;
-        } else if (line.startsWith("* ")) { // Check for action message
-            int spacePos = line.indexOf(' ', 2);
-            String senderNick = line.substring(2, spacePos);
-            String actionMessage = line.substring(spacePos + 1);
-
-            tft.setTextColor(TFT_WHITE);
+        } else if (line.startsWith("ERROR ")) {
+            tft.setTextColor(TFT_RED);
+            tft.print("ERROR ");
+            String errorReason = line.substring(6);
+            tft.setTextColor(TFT_DARKGREY);
+            tft.print(errorReason);
+            cursorY += CHAR_HEIGHT;
+        } else if (line.startsWith("* ")) {
+            tft.setTextColor(TFT_MAGENTA);
             tft.print("* ");
+            int startIndex = 2;
+            int endIndex = line.indexOf(' ', startIndex);
+            String senderNick = line.substring(startIndex, endIndex);
+            String actionMessage = line.substring(endIndex + 1);
             tft.setTextColor(nickColors[senderNick]);
-            tft.print(senderNick + " ");
-            tft.setTextColor(TFT_WHITE);
-            tft.print(actionMessage);
-
+            tft.print(senderNick);
+            tft.setTextColor(TFT_MAGENTA);
+            tft.print(" " + actionMessage);
             cursorY += CHAR_HEIGHT;
         } else {
-            int colonPos = line.indexOf(':');
-            String senderNick = line.substring(0, colonPos);
-            String message = line.substring(colonPos + 2);
+            int colonIndex = line.indexOf(':');
+            String senderNick = line.substring(0, colonIndex);
+            String message = line.substring(colonIndex + 1);
 
-            tft.setTextColor(nickColors[senderNick]);
-            tft.print(senderNick + ": ");
-            tft.setTextColor(TFT_WHITE);
-
-            // Check if the message contains the nick and highlight it
-            int nickPos = message.indexOf(nick);
-            if (mention && nickPos != -1) {
-                cursorY = renderFormattedMessage(message, cursorY, CHAR_HEIGHT, true);
+            if (mention) {
+                tft.setTextColor(TFT_YELLOW, TFT_RED);
             } else {
-                cursorY = renderFormattedMessage(message, cursorY, CHAR_HEIGHT, false);
+                tft.setTextColor(nickColors[senderNick]);
             }
+            tft.print(senderNick);
+            tft.setTextColor(TFT_WHITE);
+            tft.print(":" + message);
+            cursorY += CHAR_HEIGHT;
         }
     }
-
-    displayInputLine();
 }
 
-
-void addLine(String senderNick, String message, String type, bool mention = false) {
-    if (nickColors.find(senderNick) == nickColors.end())
+void addLine(String senderNick, String message, String type, uint16_t errorColor = TFT_WHITE, uint16_t reasonColor = TFT_WHITE) {
+    if (type != "error" && nickColors.find(senderNick) == nickColors.end())
         nickColors[senderNick] = generateRandomColor();
 
     String formattedMessage;
@@ -360,6 +361,9 @@ void addLine(String senderNick, String message, String type, bool mention = fals
         formattedMessage = "MODE " + message;
     } else if (type == "action") {
         formattedMessage = "* " + senderNick + " " + message;
+    } else if (type == "error") {
+        formattedMessage = "ERROR " + message;
+        senderNick = "ERROR"; // Use ERROR as senderNick to highlight it in red
     } else {
         formattedMessage = senderNick + ": " + message;
     }
@@ -371,12 +375,16 @@ void addLine(String senderNick, String message, String type, bool mention = fals
         mentions.erase(mentions.begin());
     }
 
-    lines.push_back(formattedMessage);
-    mentions.push_back(mention);
+    if (type == "error") {
+        lines.push_back("ERROR " + message);
+        mentions.push_back(false);
+    } else {
+        lines.push_back(formattedMessage);
+        mentions.push_back(false);
+    }
 
     displayLines();
 }
-
 
 void displayDeviceInfo() {
     tft.fillScreen(TFT_BLACK);
@@ -528,7 +536,6 @@ void parseAndDisplay(String line) {
                 String senderNick = line.substring(1, line.indexOf('!'));
                 bool mention = message.indexOf(nick) != -1;
 
-                // This doesn't work for some annoying reason... even with \001
                 if (message.startsWith("\x01ACTION ") && message.endsWith("\x01")) {
                     String actionMessage = message.substring(8, message.length() - 1);
                     addLine(senderNick, actionMessage, "action");
@@ -546,9 +553,19 @@ void parseAndDisplay(String line) {
             String senderNick = line.substring(1, line.indexOf('!'));
             addLine(senderNick, "", "quit");
         } else if (command == "NICK") {
-            String oldNick = line.substring(1, line.indexOf('!'));
+            String prefix = line.startsWith(":") ? line.substring(1, firstSpace) : "";
             String newNick = line.substring(line.lastIndexOf(':') + 1);
-            addLine(oldNick, " -> " + newNick, "nick");
+
+            if (prefix == "") { // Our own NICK changes
+                addLine(nick, " -> " + newNick, "nick");
+                nick = newNick;
+            } else { // Other peoples NICK change
+                String oldNick = prefix.substring(0, prefix.indexOf('!'));
+                if (oldNick == nick) {
+                    nick = newNick; // Update global nick when we get confirmation
+                }
+                addLine(oldNick, " -> " + newNick, "nick");
+            }
         } else if (command == "KICK") {
             int thirdSpace = line.indexOf(' ', secondSpace + 1);
             int fourthSpace = line.indexOf(' ', thirdSpace + 1);
@@ -558,6 +575,10 @@ void parseAndDisplay(String line) {
         } else if (command == "MODE") {
             String modeChange = line.substring(secondSpace + 1);
             addLine("", modeChange, "mode");
+        } else if (command == "432") { // ERR_ERRONEUSNICKNAME
+            addLine("ERROR", "ERR_ERRONEUSNICKNAME", "error", TFT_RED, TFT_DARKGREY);
+        } else if (command == "433") { // ERR_NICKNAMEINUSE
+            addLine("ERROR", "ERR_NICKNAMEINUSE", "error", TFT_RED, TFT_DARKGREY);
         }
     }
 }
@@ -566,7 +587,12 @@ void parseAndDisplay(String line) {
 
 void handleKeyboardInput(char key) {
     if (key == '\n' || key == '\r') { // Enter
-        if (inputBuffer.startsWith("/debug")) {
+        if (inputBuffer.startsWith("/nick ")) {
+            String newNick = inputBuffer.substring(6);
+            sendIRC("NICK " + newNick);
+            inputBuffer = "";
+            displayInputLine();
+        } else if (inputBuffer.startsWith("/debug")) {
             debugMode = true;
             debugStartTime = millis();
             displayDeviceInfo();
@@ -585,29 +611,28 @@ void handleKeyboardInput(char key) {
         }
         inputBuffer = "";
         displayInputLine();
-        lastActivityTime = millis(); // Reset activity timer
+        lastActivityTime = millis();
         if (!screenOn) {
-            turnOnScreen(); // Turn on screen and backlight
+            turnOnScreen();
         }
     } else if (key == '\b') { // Backspace
         if (inputBuffer.length() > 0) {
             inputBuffer.remove(inputBuffer.length() - 1);
             displayInputLine();
-            lastActivityTime = millis(); // Reset activity timer
+            lastActivityTime = millis();
             if (!screenOn) {
-                turnOnScreen(); // Turn on screen and backlight
+                turnOnScreen();
             }
         }
     } else {
         inputBuffer += key;
         displayInputLine();
-        lastActivityTime = millis(); // Reset activity timer
+        lastActivityTime = millis();
         if (!screenOn) {
-            turnOnScreen(); // Turn on screen and backlight
+            turnOnScreen();
         }
     }
 }
-
 
 void sendRawCommand(String command) {
     if (client.connected()) {
@@ -624,8 +649,6 @@ char getKeyboardInput() {
     if (Wire.available()) {
         incoming = Wire.read();
         if (incoming != (char)0x00) {
-            Serial.print("Key: ");
-            Serial.println(incoming);
             return incoming;
         }
     }
