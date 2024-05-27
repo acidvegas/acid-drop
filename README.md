@@ -73,6 +73,7 @@ The device will scan for WiFi networks on boot. Once the list is displayed, you 
   - [X] `/raw` command for IRC client to send raw data to the server
   - [ ] Add scrolling backlog for IRC to see the last 200 messages
   - [X] Hilight support *(so we can see when people mention our NICK)*
+  - [X] 99 color support
 - [ ] ChatGPT
 - [ ] SSH Client
 - [ ] Wardriving
