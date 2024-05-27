@@ -38,6 +38,13 @@ A compiled "release" will be done once I finish somoe fo the basic features, but
 # Connecting to WiFi
 The device will scan for WiFi networks on boot. Once the list is displayed, you can scroll up and down the list with the "u" key for UP and the "d" key for down.
 
+# Commands
+| Command         | Description                 |
+| --------------- | --------------------------- |
+| `/debug`        | Show hardware information   |
+| `/me <message>` | Send an ACTION message      |
+| `/raw <data>`   | Send RAW data to the server |
+
 # Debugging over Serial
 1. Install screen: `apt-get install screen` *(or whatever package manager you use)*
 2. Plug in your device via USB.
