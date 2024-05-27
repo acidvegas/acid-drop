@@ -209,13 +209,13 @@ void turnOffScreen() {
     Serial.println("Screen turned off");
     tft.writecommand(TFT_DISPOFF); // Turn off display
     tft.writecommand(TFT_SLPIN);   // Put display into sleep mode
-    digitalWrite(TFT_BL, LOW);     // Turn off the backlight (Assuming TFT_BL is the backlight pin)
+    digitalWrite(TFT_BL, LOW);     // Turn off the backlight
     screenOn = false;
 }
 
 void turnOnScreen() {
     Serial.println("Screen turned on");
-    digitalWrite(TFT_BL, HIGH);    // Turn on the backlight (Assuming TFT_BL is the backlight pin)
+    digitalWrite(TFT_BL, HIGH);    // Turn on the backlight
     tft.writecommand(TFT_SLPOUT);  // Wake up display from sleep mode
     tft.writecommand(TFT_DISPON);  // Turn on display
     screenOn = true;
@@ -665,8 +665,20 @@ void displayInputLine() {
     tft.setCursor(0, SCREEN_HEIGHT - INPUT_LINE_HEIGHT);
     tft.setTextColor(TFT_WHITE);
     tft.setTextSize(1);
-    tft.print("> " + inputBuffer);
+
+    int inputWidth = SCREEN_WIDTH - tft.textWidth("> ");
+    String displayInput = inputBuffer;
+    int displayWidth = tft.textWidth(displayInput);
+
+    // Scrolling input text
+    while (displayWidth > inputWidth) {
+        displayInput = displayInput.substring(1);
+        displayWidth = tft.textWidth(displayInput);
+    }
+
+    tft.print("> " + displayInput);
 }
+
 
 void displayCenteredText(String text) {
     tft.fillScreen(TFT_BLACK);
