@@ -742,9 +742,9 @@ uint16_t getColorFromCode(int colorCode) {
         case 35: return 0x020E;
         case 36: return 0x000E;
         case 37: return 0x480E;
-        case 38: return 0x700E;
+        case 38: return 0xBA08;
         case 39: return 0x7008;
-        case 40: return 0xB000;
+        case 40: return 0xBA08;
         case 41: return 0xB300;
         case 42: return 0xB5A0;
         case 43: return 0x7DA0;
@@ -754,7 +754,7 @@ uint16_t getColorFromCode(int colorCode) {
         case 47: return 0x0316;
         case 48: return 0x0016;
         case 49: return 0x7016;
-        case 50: return 0xB016;
+        case 50: return 0xBA08;
         case 51: return 0xB00D;
         case 52: return 0xF800;
         case 53: return 0xFC60;
