@@ -94,6 +94,10 @@ The device will scan for WiFi networks on boot. Once the list is displayed, you 
 # Contributors
 Join us in **#comms** on **[irc.supernets.org](irc://irc.supernets.org)** if you want to get your hands dirty.
 
+# More screens..
+![](./.screens/99colors.png)
+![](./.screens/hueg.png)
+
 ___
 
 ###### Mirrors for this repository: [acid.vegas](https://git.acid.vegas/acid-drop) • [SuperNETs](https://git.supernets.org/acidvegas/acid-drop) • [GitHub](https://github.com/acidvegas/acid-drop) • [GitLab](https://gitlab.com/acidvegas/acid-drop) • [Codeberg](https://codeberg.org/acidvegas/acid-drop)
