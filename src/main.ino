@@ -594,33 +594,43 @@ void parseAndDisplay(String line) {
 
             if (message.startsWith("\x01" "ACTION ") && message.endsWith("\x01")) {
                 String actionMessage = message.substring(8, message.length() - 1); // Substring might need adjustment
-                if (target == buffers[currentBufferIndex].channel) {
-                    addLine(senderNick, actionMessage, "action");
-                } else {
-                    addLineToBuffer(getBufferByChannel(target), senderNick, actionMessage, "action", mention);
+                if (target != "#blackhole" && target != "#5000") {
+                    if (target == buffers[currentBufferIndex].channel) {
+                        addLine(senderNick, actionMessage, "action");
+                    } else {
+                        addLineToBuffer(getBufferByChannel(target), senderNick, actionMessage, "action", mention);
+                    }
                 }
             } else {
-                if (target == buffers[currentBufferIndex].channel) {
-                    addLine(senderNick, message, "message", mention);
-                } else {
-                    addLineToBuffer(getBufferByChannel(target), senderNick, message, "message", mention);
+                if (target != "#blackhole" && target != "#5000") {
+                    if (target == buffers[currentBufferIndex].channel) {
+                        addLine(senderNick, message, "message", mention);
+                    } else {
+                        addLineToBuffer(getBufferByChannel(target), senderNick, message, "message", mention);
+                    }
                 }
             }
         } else if (command == "JOIN") {
             String senderNick = line.substring(1, line.indexOf('!'));
             String targetChannel = line.substring(secondSpace + 1);
-            if (targetChannel == buffers[currentBufferIndex].channel) {
-                addLine(senderNick, " has joined " + targetChannel, "join", false);
+            if (targetChannel != "#blackhole" && targetChannel != "#5000") {
+                if (targetChannel == buffers[currentBufferIndex].channel) {
+                    addLine(senderNick, " has joined " + targetChannel, "join", false);
+                } else {
+                    addLineToBuffer(getBufferByChannel(targetChannel), senderNick, " has joined " + targetChannel, "join", false);
+                }
             } else {
-                addLineToBuffer(getBufferByChannel(targetChannel), senderNick, " has joined " + targetChannel, "join", false);
+                sendIRC("PART " + targetChannel);
             }
         } else if (command == "PART") {
             String senderNick = line.substring(1, line.indexOf('!'));
             String targetChannel = line.substring(secondSpace + 1);
-            if (targetChannel == buffers[currentBufferIndex].channel) {
-                addLine(senderNick, " has EMO-QUIT " + targetChannel, "part", false);
-            } else {
-                addLineToBuffer(getBufferByChannel(targetChannel), senderNick, " has EMO-QUIT " + targetChannel, "part", false);
+            if (targetChannel != "#blackhole" && targetChannel != "#5000") {
+                if (targetChannel == buffers[currentBufferIndex].channel) {
+                    addLine(senderNick, " has EMO-QUIT " + targetChannel, "part", false);
+                } else {
+                    addLineToBuffer(getBufferByChannel(targetChannel), senderNick, " has EMO-QUIT " + targetChannel, "part", false);
+                }
             }
         } else if (command == "QUIT") {
             String senderNick = line.substring(1, line.indexOf('!'));
@@ -647,10 +657,12 @@ void parseAndDisplay(String line) {
             String kicker = line.substring(1, line.indexOf('!'));
             String kicked = line.substring(thirdSpace + 1, fourthSpace);
             String targetChannel = line.substring(secondSpace + 1, thirdSpace);
-            if (targetChannel == buffers[currentBufferIndex].channel) {
-                addLine(kicked, " by " + kicker, "kick", false);
-            } else {
-                addLineToBuffer(getBufferByChannel(targetChannel), kicked, " by " + kicker, "kick", false);
+            if (targetChannel != "#blackhole" && targetChannel != "#5000") {
+                if (targetChannel == buffers[currentBufferIndex].channel) {
+                    addLine(kicked, " by " + kicker, "kick", false);
+                } else {
+                    addLineToBuffer(getBufferByChannel(targetChannel), kicked, " by " + kicker, "kick", false);
+                }
             }
         } else if (command == "MODE") {
             String modeChange = line.substring(secondSpace + 1);
@@ -1168,7 +1180,9 @@ void updateTimeFromNTP() {
 
 void joinChannels() {
     for (auto& buffer : buffers) {
-        sendIRC("JOIN " + buffer.channel);
+        if (buffer.channel != "#blackhole" && buffer.channel != "#5000") {
+            sendIRC("JOIN " + buffer.channel);
+        }
     }
 }
 
