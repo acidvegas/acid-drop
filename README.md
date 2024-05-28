@@ -25,7 +25,7 @@ A compiled "release" will be done once I finish somoe fo the basic features, but
 4. Hold down the trackball on the device, turn it on, and plug it in to the computer.
 5. Press **F1** and select `PlatformIO: Build`
 6. Press **F1** and select `PlatformIO: Upload`
-7. Press the RST *(reset)* button ont he device.
+7. Press the RST *(reset)* button on the device.
 
 ###### Using ESP Tool
 1. Take the `firmware.bin` file from the release page and download it.
@@ -33,7 +33,7 @@ A compiled "release" will be done once I finish somoe fo the basic features, but
 3. Hold down the trackball on the device, turn it on, and plug it in to the computer.
 4. Confirm the serial device in your `/dev` directory *(Your device will likely be `/dev/ttyAMC0` or `/dev/ttyUSB0`)*
 5. Flash the device: `esptool.py --chip esp32-s3 --port /dev/ttyUSB0 --baud 115200 write_flash -z 0x1000 firmware.bin`
-6. Press the RST *(reset)* button ont he device.
+6. Press the RST *(reset)* button on the device.
 
 # Connecting to WiFi
 The device will scan for WiFi networks on boot. Once the list is displayed, you can scroll up and down the list with the "u" key for UP and the "d" key for down.
