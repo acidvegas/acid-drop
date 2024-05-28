@@ -73,6 +73,7 @@ The device will scan for WiFi networks on boot. Once the list is displayed, you 
 - [X] IRC Client
   - [X] `/raw` command for IRC client to send raw data to the server
   - [ ] Add scrolling backlog for IRC to see the last 200 messages
+  - [ ] Multi-buffer support *(`/join` & `/part` support with switching between buffers with `/0`, `/1`, `/2`, etc)*
   - [X] Hilight support *(so we can see when people mention our NICK)*
   - [X] 99 color support
 - [ ] ChatGPT
@@ -87,10 +88,6 @@ The device will scan for WiFi networks on boot. Once the list is displayed, you 
 
 # Known issues
 - Messages that exceed the screen width and wrap to the next line will throw off thje logic of calculating the max lines able to be displayed on the screen. Messages eventually go off screen.
-- Input messages exceeding the screen width go off screen, and need to wrap and create a new input line, pushing up the backlog of messages.
-- Some colors are not working when its only a background color or only contains a space
-- Sometimes it will not connect to IRC even from reconnections, and you have to reboot and try again.
-- Screen timeout can occur during an IRC reconnection and blck keyboard input
 
 # Contributors
 Join us in **#comms** on **[irc.supernets.org](irc://irc.supernets.org)** if you want to get your hands dirty.
