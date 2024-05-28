@@ -740,13 +740,11 @@ int renderFormattedMessage(String message, int cursorY, int lineHeight, bool hig
                     cursorY += lineHeight;
                     tft.setCursor(0, cursorY);
                 }
-                if (c == ' ') {
-                    // Draw background for spaces
+                if (c == ' ') { // Handle spaces separately to ensure background color is applied (do we need this anyhmore since .trim() was removed?)
                     int spaceWidth = tft.textWidth(" ");
                     tft.fillRect(tft.getCursorX(), tft.getCursorY(), spaceWidth, lineHeight, bgColor);
                     tft.setCursor(tft.getCursorX() + spaceWidth, tft.getCursorY());
                 } else {
-                    // Ensure that background color is applied to characters
                     tft.fillRect(tft.getCursorX(), tft.getCursorY(), tft.textWidth(String(c)), lineHeight, bgColor);
                     tft.setTextColor(fgColor, bgColor);
                     tft.print(c);
@@ -755,7 +753,7 @@ int renderFormattedMessage(String message, int cursorY, int lineHeight, bool hig
         }
     }
 
-    // Ensure trailing spaces are displayed with background color
+    // Ensure trailing spaces are displayed with background color (do we need this anymore since .trim() was removed?)
     if (message.endsWith(" ")) {
         int trailingSpaces = 0;
         for (int i = message.length() - 1; i >= 0 && message[i] == ' '; i--) {
@@ -913,7 +911,7 @@ void addLine(String senderNick, String message, String type, uint16_t errorColor
         formattedMessage = "* " + senderNick + " " + message;
     } else if (type == "error") {
         formattedMessage = "ERROR " + message;
-        senderNick = "ERROR"; // Use ERROR as senderNick to highlight it in red
+        senderNick = "ERROR"; // Probably a better way to handle this than emulating a NICK
     } else {
         formattedMessage = senderNick + ": " + message;
     }
@@ -1054,10 +1052,10 @@ void displayInputLine() {
     tft.setTextColor(TFT_WHITE);
     tft.setTextSize(1);
 
-    int inputWidth = SCREEN_WIDTH - tft.textWidth("> ");
     String displayInput = inputBuffer;
     int displayWidth = tft.textWidth(displayInput);
-
+    int inputWidth = SCREEN_WIDTH - tft.textWidth("> ");
+    
     // Allow the input to scroll if it exceeds the screen width
     while (displayWidth > inputWidth) {
         displayInput = displayInput.substring(1);
