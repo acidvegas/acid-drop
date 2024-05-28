@@ -523,6 +523,7 @@ char getKeyboardInput() {
 }
 
 
+// Cheers to e for hand typing these color codes
 uint16_t getColorFromCode(int colorCode) {
     switch (colorCode) {
         case 0: return TFT_WHITE;
