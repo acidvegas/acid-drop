@@ -1,8 +1,7 @@
-
 #pragma once
 
-// board peripheral power control pin needs to be set to HIGH when using the peripheral
 
+// Board pin definitions ------------------------
 #define BOARD_POWERON       10
 
 #define BOARD_I2S_WS        5
@@ -46,9 +45,17 @@
 
 #define BOARD_BL_PIN        42
 
+#define GPS_RX_PIN          44
+#define GPS_TX_PIN          43
 
+
+// Other definitions ----------------------------
+#define SCREEN_WIDTH  320
+#define SCREEN_HEIGHT 240
+
+// Battery definitions
+#define CONV_FACTOR 1.8 // Conversion factor for the ADC to voltage conversion
+#define READS 20        // Number of readings for averaging
 
 #define LILYGO_KB_SLAVE_ADDRESS 0x55
 
-#define GPS_RX_PIN 44
-#define GPS_TX_PIN 43
