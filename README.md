@@ -2,17 +2,10 @@
   <img src="./.screens/aciddrop2.png" />
 </p>
 
-
 # Work in progress
 This is a custom firmware being developed for the [LilyGo T-Deck](https://www.lilygo.cc/products/t-deck), currently it is experimental & buggy.
 
-I am terrible at C++ and still am trying to wrap my head around the language's logic, so most of this code has been shit out and written like a cowboy.
-
-The project started out with as IRC bridge for [Meshtastic](https://meshtastic.org/) over MQTT, just so I could say "we have IRC over radio", which later led to me modifying the official Meshtastic [firmware](https://github.com/meshtastic/firmware) to add extended features. I am deep in the rabbit hole of embedded development and am starting from scratch making this an entirely custom firmware.
-
-This is being developed in my free time as a fun project. It is no where near being useful.
-
-A compiled "release" will be done once I finish somoe fo the basic features, but feel free t compile this on your own to test it out!
+We have a team of developers working on this project in **#comms** on **[irc.supernets.org](irc://irc.supernets.org)**, join us if you have ideas, bugs, or want to get your hands dirty & develope this project with us.
 
 # Previews
 ![](./.screens/preview1.png) ![](./.screens/preview2.png)
@@ -88,9 +81,6 @@ The device will scan for WiFi networks on boot. Once the list is displayed, you 
 
 # Known issues
 - Messages that exceed the screen width and wrap to the next line will throw off thje logic of calculating the max lines able to be displayed on the screen. Messages eventually go off screen.
-
-# Contributors
-Join us in **#comms** on **[irc.supernets.org](irc://irc.supernets.org)** if you want to get your hands dirty.
 
 # More screens..
 ![](./.screens/99colors.png)
