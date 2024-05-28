@@ -3,12 +3,11 @@
 </p>
 
 # Work in progress
-This is a custom firmware being developed for the [LilyGo T-Deck](https://www.lilygo.cc/products/t-deck), currently it is experimental & buggy.
+This is a custom firmware being developed for the [LilyGo T-Deck](https://www.lilygo.cc/products/t-deck), currently it is experimental & buggy while we are in beta status.
 
-We have a team of developers working on this project in **#comms** on **[irc.supernets.org](irc://irc.supernets.org)**, join us if you have ideas, bugs, or want to get your hands dirty & develope this project with us.
+If you are familiar with or use [Internet Relay Chat](https://en.wikipedia.org/wiki/IRC), we have a team of developers working on this project in **#comms** on **[irc.supernets.org](irc://irc.supernets.org)**, join us if you have ideas, bugs, or want to get your hands dirty & develope this project with us.
 
-# Previews
-![](./.screens/preview1.png) ![](./.screens/preview2.png)
+![](./.screens/preview.png)
 
 # Flashing the Firmware
 ###### Using VS Code
@@ -28,10 +27,11 @@ We have a team of developers working on this project in **#comms** on **[irc.sup
 5. Flash the device: `esptool.py --chip esp32-s3 --port /dev/ttyUSB0 --baud 115200 write_flash -z 0x1000 firmware.bin`
 6. Press the RST *(reset)* button on the device.
 
-# Connecting to WiFi
-The device will scan for WiFi networks on boot. Once the list is displayed, you can scroll up and down the list with the "u" key for UP and the "d" key for down.
+# Command & Control
+###### Menu controls
+The device will scan for WiFi networks on boot. Once the list is displayed, you can scroll up and down the list with the `u` key for UP and the `d` key for down.
 
-# Commands
+###### IRC commands
 | Command         | Description                 |
 | --------------- | --------------------------- |
 | `/debug`        | Show hardware information   |
@@ -47,13 +47,16 @@ The device will scan for WiFi networks on boot. Once the list is displayed, you 
 # Roapmap
 ###### Device functionality
 - [X] Screen timeout on inactivity *(default 30 seconds)*
-- [ ] Keyboard backlight timeout on 10 seconds oof inactivity.
+  - [ ] Keyboard backlight timeout with screen timeout
 - [ ] Trackball support
 - [ ] Speaker support
+- [ ] GPS support
+- [ ] Lora support
+- [ ] BLE support
 
 ###### Features
 - [X] Wifi scanning & selection menu
-- [ ] Saved wifi profiles
+  - [x] Saved wifi profiles
 - [ ] Wifi Hotspot
 - [ ] Notifcations Window *(All notifications will go here, from IRC, Gotify, Meshtastic, or anything)*
 - [X] Status bar *(Time, Date, Notification, Wifi, and Battery)*
@@ -79,11 +82,14 @@ The device will scan for WiFi networks on boot. Once the list is displayed, you 
 - [ ] Spotify/Music player *(can we play audio throuigh Bluetoth headphones or the on-board speaker?)*
 - [ ] Syslog *(All serial logs will be displayed here for on-device debugging)*
 
-# Known issues
-- Messages that exceed the screen width and wrap to the next line will throw off thje logic of calculating the max lines able to be displayed on the screen. Messages eventually go off screen.
-
-# More screens..
+# Previews
+###### 99 Color support
 ![](./.screens/99colors.png)
+
+###### Full ASCII support for PUMPERS
+![](./.screens/ascii.png)
+
+###### Support for /HUEG
 ![](./.screens/hueg.png)
 
 ___
