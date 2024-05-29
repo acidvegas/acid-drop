@@ -16,7 +16,6 @@
 #include "pins.h"
 
 
-
 // Constants
 #define CHAR_HEIGHT 10
 #define LINE_SPACING  0
@@ -37,13 +36,7 @@ struct WiFiNetwork {
 Pangodream_18650_CL BL(BOARD_BAT_ADC, CONV_FACTOR, READS);
 Preferences preferences;
 TFT_eSPI tft = TFT_eSPI();
-WiFiClientSecure client;
-
-// Initialize variables
-String inputBuffer = "";
-String ssid = "";
-String password = "";
-String nick = "";
+WiFiClient* client;
 
 // Memory vectors & maps
 std::map<String, uint32_t> nickColors;
@@ -51,7 +44,7 @@ std::vector<String> lines; // Possible rename to bufferLines ?
 std::vector<bool> mentions;
 std::vector<WiFiNetwork> wifiNetworks;
 
-// Global variables to cache preferences
+// Global variables to cache preferences and buffers
 String irc_nickname;
 String irc_username;
 String irc_realname;
@@ -62,16 +55,10 @@ String irc_channel;
 String irc_nickserv;
 String wifi_ssid;
 String wifi_password;
+String inputBuffer = "";
 
-// IRC connection (These will eventually be set dynamically when we have a settings menu)
-const char* server = "irc.supernets.org";
-const int port = 6697;
-bool useSSL = true;
+// Leftover crack variables (will be removed when preferences are done)
 const char* channel = "#comms";
-
-// IRC identity
-const char* user = "tdeck";
-const char* realname = "ACID DROP Firmware v0.1.0b"; // Need to eventually set this up to use a variable
 
 // Timing variables
 unsigned long infoScreenStartTime = 0;
@@ -127,30 +114,21 @@ void setup() {
     tft.invertDisplay(1);
     Serial.println("TFT initialized");
 
-    // Display the boot screen for 3 seconds
+    // Display the boot screen
     displayXBM();
     delay(3000);
 
-    // Load the WiFi preferences if they exist
-    preferences.begin("wifi", false);
-    ssid = preferences.getString("ssid", "");
-    password = preferences.getString("password", "");
-    preferences.end();
+    // Initialize the preferences
+    setDefaultPreferences();
+    loadPreferences();
 
     // Connect to WiFi if credentials are stored, otherwise scan for networks
-    if (ssid.length() > 0 && password.length() > 0) {
+    if (wifi_ssid.length() > 0 && wifi_password.length() > 0) {
         Serial.println("Stored WiFi credentials found");
-        connectToWiFi();
-        if (WiFi.status() != WL_CONNECTED) // ISSUE: If we are out of range of the last stored network, it is still going to attempt to connect to it 10 times...
-            scanWiFiNetworks();
+        connectToWiFi(wifi_ssid, wifi_password);
     } else {
         scanWiFiNetworks();
     }
-
-    // Initialize the random seed for random nick generation
-    randomSeed(analogRead(0));
-    int randomNum = random(1000, 10000);
-    nick = "ACID_" + String(randomNum);
 }
 
 
@@ -170,7 +148,7 @@ void loop() {
         }
     } else {
         // Handle keyboard input for WiFi if the SSID is empty still (aka not connected)
-        if (ssid.isEmpty()) {
+        if (wifi_ssid.length() == 0) {
             char incoming = getKeyboardInput();
             if (incoming != 0) {
                 handleWiFiSelection(incoming);
@@ -184,24 +162,27 @@ void loop() {
             }
 
             // Handle IRC data
-            if (client.connected()) {
+            if (client && client->connected()) {
                 handleIRC();
             } else {
                 // Connect to IRC if not connected (or reconnect to wifi if disconnected)
                 if (WiFi.status() == WL_CONNECTED) {
-                    displayCenteredText("CONNECTING TO " + String(server));
+                    displayCenteredText("CONNECTING TO " + String(irc_server));
                     if (connectToIRC()) {
+                        delay(2000); // Delay to allow the connection to establish
                         Serial.println("Connected to IRC!");
-                        displayCenteredText("CONNECTED TO " + String(server));
-                        sendIRC("NICK " + String(nick));
-                        sendIRC("USER " + String(user) + " 0 * :" + String(realname));
+                        displayCenteredText("CONNECTED TO " + String(irc_server));
+                        Serial.println("Connecting to IRC with " + irc_nickname + " (" + irc_username + ") [" + irc_realname + "]");
+                        sendIRC("NICK " + String(irc_nickname));
+                        sendIRC("USER " + String(irc_username) + " 0 * :" + String(irc_realname));
                     } else {
+                        Serial.println("Failed to connect to IRC");
                         displayCenteredText("CONNECTION FAILED");
                         delay(1000);
                     }
                 } else {
                     displayCenteredText("RECONNECTING TO WIFI");
-                    WiFi.begin(ssid.c_str(), password.c_str());
+                    WiFi.begin(wifi_ssid.c_str(), wifi_password.c_str()); // Need to handle this better
                 }
             }
 
@@ -228,12 +209,72 @@ void loop() {
     }
 }
 
+
+void setDefaultPreferences() {
+    preferences.begin("config", false);
+
+    // IRC preferences
+    if (!preferences.isKey("irc_nickname"))
+        preferences.putString("irc_nickname", "ACID_" + String(random(1000, 10000)));
+
+    if (!preferences.isKey("irc_username"))
+        preferences.putString("irc_username", "tdeck");
+
+    if (!preferences.isKey("irc_realname"))
+        preferences.putString("irc_realname", "ACID DROP Firmware");
+
+    if (!preferences.isKey("irc_server"))
+        preferences.putString("irc_server", "irc.supernets.org");
+
+    if (!preferences.isKey("irc_port"))
+        preferences.putInt("irc_port", 6667);
+
+    if (!preferences.isKey("irc_tls"))
+        preferences.putBool("irc_tls", false);
+
+    if (!preferences.isKey("irc_channel"))
+        preferences.putString("irc_channel", "#comms");
+
+    if (!preferences.isKey("irc_nickserv"))
+        preferences.putString("irc_nickserv", "");
+
+    // WiFi preferences
+    if (!preferences.isKey("wifi_ssid"))
+        preferences.putString("wifi_ssid", "");
+
+    if (!preferences.isKey("wifi_password"))
+        preferences.putString("wifi_password", "");
+
+    preferences.end();
+}
+
+
+void loadPreferences() {
+    preferences.begin("config", true);
+
+    // IRC preferences
+    irc_nickname = preferences.getString("irc_nickname");
+    irc_username = preferences.getString("irc_username");
+    irc_realname = preferences.getString("irc_realname");
+    irc_server = preferences.getString("irc_server");
+    irc_port = preferences.getInt("irc_port");
+    irc_tls = preferences.getBool("irc_tls");
+    irc_channel = preferences.getString("irc_channel");
+    irc_nickserv = preferences.getString("irc_nickserv");
+
+    // WiFi preferences
+    wifi_ssid = preferences.getString("wifi_ssid");
+    wifi_password = preferences.getString("wifi_password");
+
+    preferences.end();
+}
+
 // ------------------------------------------------------------------------------------------------
 
 
 
 // WiFi functions ---------------------------------------------------------------------------------
-void connectToWiFi() {
+void connectToWiFi(String ssid, String password) {
     Serial.println("Connecting to WiFi network: " + ssid);
     WiFi.begin(ssid.c_str(), password.c_str());
     
@@ -254,17 +295,29 @@ void connectToWiFi() {
         updateTimeFromNTP();
 
         // Store the WiFi credentials upon successful connection
-        preferences.putString("ssid", ssid);
-        preferences.putString("password", password);
+        preferences.begin("config", false);
+        preferences.putString("wifi_ssid", ssid);
+        preferences.putString("wifi_password", password);
+        preferences.end();
         Serial.println("Stored WiFi credentials updated");
+
+        // Cache the WiFi credentials
+        wifi_ssid = ssid;
+        wifi_password = password;
     } else {
         Serial.println("Failed to connect to WiFi network: " + ssid);
         displayCenteredText("WIFI CONNECTION FAILED");
         
         // Clear stored credentials on failure
-        preferences.remove("ssid");
-        preferences.remove("password");
-        Serial.println("Stored WiFi credentials removed");
+        preferences.begin("config", false);
+        preferences.putString("wifi_ssid", "");
+        preferences.putString("wifi_password", "");
+        preferences.end();
+        Serial.println("Stored WiFi credentials removed");\
+
+        // Clear the cached WiFi credentials
+        wifi_ssid = "";
+        wifi_password = "";
 
         scanWiFiNetworks(); // Rescan for networks
     }
@@ -307,9 +360,9 @@ void scanWiFiNetworks() {
 
 void handlePasswordInput(char key) {
     if (key == '\n' || key == '\r') { // Enter
-        password = inputBuffer;
+        wifi_password = inputBuffer;
         inputBuffer = "";
-        connectToWiFi();
+        connectToWiFi(wifi_ssid, wifi_password);
     } else if (key == '\b') { // Backspace
         if (inputBuffer.length() > 0) {
             inputBuffer.remove(inputBuffer.length() - 1);
@@ -393,7 +446,7 @@ void handleWiFiSelection(char key) {
     } else if (key == 'd') {
         updateSelectedNetwork(1);
     } else if (key == '\n' || key == '\r') {
-        ssid = wifiNetworks[selectedNetworkIndex].ssid;
+        wifi_ssid = wifiNetworks[selectedNetworkIndex].ssid;
         if (wifiNetworks[selectedNetworkIndex].encryption == "Secured") {
             inputBuffer = "";
             tft.fillScreen(TFT_BLACK);
@@ -413,8 +466,8 @@ void handleWiFiSelection(char key) {
                 }
             }
         } else {
-            password = "";
-            connectToWiFi();
+            wifi_password = "";
+            connectToWiFi(wifi_ssid, wifi_password);
         }
     }
 }
@@ -425,14 +478,15 @@ void handleWiFiSelection(char key) {
 
 // IRC functions ----------------------------------------------------------------------------------
 bool connectToIRC() {
-    if (useSSL) {
-        Serial.println("Connecting to IRC with TLS: " + String(server) + ":" + String(port));
-        client.setInsecure();
-        return client.connect(server, port);
+    if (irc_tls) {
+        Serial.println("Connecting to IRC with TLS: " + String(irc_server) + ":" + String(irc_port));
+        client = new WiFiClientSecure();
+        static_cast<WiFiClientSecure*>(client)->setInsecure();
+        return static_cast<WiFiClientSecure*>(client)->connect(irc_server.c_str(), irc_port);
     } else {
-        Serial.println("Connecting to IRC: " + String(server) + ":" + String(port));
-        WiFiClient nonSecureClient;
-        return nonSecureClient.connect(server, port);
+        Serial.println("Connecting to IRC: " + String(irc_server) + ":" + String(irc_port));
+        client = new WiFiClient();
+        return client->connect(irc_server.c_str(), irc_port);
     }
 }
 
@@ -443,11 +497,12 @@ void sendIRC(String command) {
         return;
     }
 
-    if (client.connected()) {
-        if (client.println(command))
+    if (client->connected()) {
+        if (client->println(command)) {
             Serial.println("IRC: >>> " + command);
-        else
+        } else {
             Serial.println("Failed to send: " + command);
+        }
     } else {
         Serial.println("Failed to send: Not connected to IRC");
     }
@@ -455,13 +510,14 @@ void sendIRC(String command) {
 
 
 void handleIRC() {
-    while (client.available()) {
-        String line = client.readStringUntil('\n');
+    while (client->available()) {
+        String line = client->readStringUntil('\n');
 
         // This is an anomaly, but it can happen and I wanted debug output for if it does
-        if (line.length() > 512)
+        if (line.length() > 512) {
             Serial.println("WARNING: IRC line length exceeds 512 characters!");
             line = line.substring(0, 512); // Truncate the line to 512 characters anyways
+        }
 
         Serial.println("IRC: " + line);
 
@@ -712,6 +768,11 @@ int renderFormattedMessage(String message, int cursorY, int lineHeight, bool hig
     bool underline = false;
     bool nickHighlighted = false; // Track if the nick has been highlighted
 
+    int nickPos = -1;
+    if (highlightNick) {
+        nickPos = message.indexOf(irc_nickname);
+    }
+
     for (unsigned int i = 0; i < message.length(); i++) {
         char c = message[i];
         if (c == '\x02') { // Bold
@@ -761,9 +822,9 @@ int renderFormattedMessage(String message, int cursorY, int lineHeight, bool hig
             tft.setTextColor(fgColor, bgColor);
             tft.setTextFont(1);
         } else {
-            if (highlightNick && !nickHighlighted && message.substring(i).startsWith(nick)) {
+            if (highlightNick && !nickHighlighted && nickPos != -1 && i == nickPos) {
                 tft.setTextColor(TFT_YELLOW, bgColor); // Set both foreground and background color
-                for (char nc : nick) {
+                for (char nc : irc_nickname) {
                     tft.print(nc);
                     i++;
                 }
@@ -804,6 +865,7 @@ int renderFormattedMessage(String message, int cursorY, int lineHeight, bool hig
     cursorY += lineHeight; // Add line height after printing the message
     return cursorY; // Return the new cursor Y position for the next line
 }
+
 
 
 void displayLines() {
@@ -878,7 +940,7 @@ void displayLines() {
             tft.print(kicker);
             cursorY += CHAR_HEIGHT;
         } else if (line.startsWith("MODE ")) {
-            tft.setTextColor(TFT_YELLOW);
+            tft.setTextColor(TFT_BLUE);
             tft.print("MODE ");
             String modeChange = line.substring(5);
             tft.setTextColor(TFT_WHITE);
@@ -919,7 +981,7 @@ void displayLines() {
 }
 
 
-void addLine(String senderNick, String message, String type, uint16_t errorColor = TFT_WHITE, uint16_t reasonColor = TFT_WHITE) {
+void addLine(String senderNick, String message, String type, bool mention = false, uint16_t errorColor = TFT_WHITE, uint16_t reasonColor = TFT_WHITE) {
     if (type != "error" && nickColors.find(senderNick) == nickColors.end())
         nickColors[senderNick] = generateRandomColor();
 
@@ -942,6 +1004,7 @@ void addLine(String senderNick, String message, String type, uint16_t errorColor
         formattedMessage = "KICK " + senderNick + message;
     } else if (type == "mode") {
         formattedMessage = "MODE " + message;
+        tft.setTextColor(TFT_BLUE);
     } else if (type == "action") {
         formattedMessage = "* " + senderNick + " " + message;
     } else if (type == "error") {
@@ -963,7 +1026,7 @@ void addLine(String senderNick, String message, String type, uint16_t errorColor
         mentions.push_back(false);
     } else {
         lines.push_back(formattedMessage);
-        mentions.push_back(false);
+        mentions.push_back(mention);
     }
 
     displayLines();
@@ -984,7 +1047,7 @@ void parseAndDisplay(String line) {
                 int colonPos = line.indexOf(':', thirdSpace);
                 String message = line.substring(colonPos + 1);
                 String senderNick = line.substring(1, line.indexOf('!'));
-                bool mention = message.indexOf(nick) != -1;
+                bool mention = message.indexOf(irc_nickname) != -1;
 
                 if (message.startsWith(String("\x01") + "ACTION ") && message.endsWith("\x01")) {
                     String actionMessage = message.substring(8, message.length() - 1);
@@ -1006,14 +1069,15 @@ void parseAndDisplay(String line) {
             String prefix = line.startsWith(":") ? line.substring(1, firstSpace) : "";
             String newNick = line.substring(line.lastIndexOf(':') + 1);
 
-            if (prefix == "") { // Our own NICK changes
-                addLine(nick, " -> " + newNick, "nick");
-                nick = newNick;
+            if (prefix.indexOf('!') == -1) { // Our own NICK changes
+                addLine(irc_nickname, " -> " + newNick, "nick");
+                irc_nickname = newNick; // Update global nick when we get confirmation
             } else { // Other peoples NICK change
                 String oldNick = prefix.substring(0, prefix.indexOf('!'));
-                if (oldNick == nick)
-                    nick = newNick; // Update global nick when we get confirmation
                 addLine(oldNick, " -> " + newNick, "nick");
+                if (oldNick == irc_nickname) {
+                    irc_nickname = newNick; // Update global nick when we get confirmation
+                }
             }
         } else if (command == "KICK") {
             int thirdSpace = line.indexOf(' ', secondSpace + 1);
@@ -1056,11 +1120,11 @@ void handleKeyboardInput(char key) {
         } else if (inputBuffer.startsWith("/me ")) {
             String actionMessage = inputBuffer.substring(4);
             sendIRC("PRIVMSG " + String(channel) + " :\001ACTION " + actionMessage + "\001");
-            addLine(nick, actionMessage, "action");
+            addLine(irc_nickname, actionMessage, "action");
             inputBuffer = "";
         } else {
             sendIRC("PRIVMSG " + String(channel) + " :" + inputBuffer);
-            addLine(nick, inputBuffer, "message");
+            addLine(irc_nickname, inputBuffer, "message");
         }
         inputBuffer = "";
         displayInputLine();
