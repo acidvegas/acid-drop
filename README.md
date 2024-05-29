@@ -69,9 +69,13 @@ The device will scan for WiFi networks on boot. Once the list is displayed, you 
 - [X] IRC Client
   - [X] `/raw` command for IRC client to send raw data to the server
   - [ ] Add scrolling backlog for IRC to see the last 200 messages
-  - [ ] Multi-buffer support *(`/join` & `/part` support with switching between buffers with `/0`, `/1`, `/2`, etc)*
+  - [ ] Multi-buffer support *(`/join` & `/part` support with switching between buffers with `/0`, `/1`, `/2`, etc)* *(`/close` also for PM buffers or kicked from channels)*
+  - [ ] Status window for network to show RAW lines from the IRC server *(buffer 0)*
+  - [ ] Hilight monitor buffer
   - [X] Hilight support *(so we can see when people mention our NICK)*
   - [X] 99 color support
+  - [ ] `/pm` support *(it should open a buffer for pms)*
+  - [ ] NickServ support
 - [ ] ChatGPT
 - [ ] SSH Client
 - [ ] Wardriving
