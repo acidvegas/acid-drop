@@ -274,7 +274,8 @@ void scanWiFiNetworks() {
         net.channel = WiFi.channel(i);
         net.rssi = WiFi.RSSI(i);
         net.encryption = (WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? "Open" : "Secured";
-        net.ssid = WiFi.SSID(i);
+        String ssid = WiFi.SSID(i).substring(0, 32); // WiFi SSIDs are limited to 32 characters
+        net.ssid = ssid;
         wifiNetworks.push_back(net);
     }
 
@@ -292,7 +293,7 @@ void handlePasswordInput(char key) {
             inputBuffer.remove(inputBuffer.length() - 1);
             displayPasswordInputLine();
         }
-    } else {
+    } else if (inputBuffer.length() < 63) { // WiFi passwords are limited to 63 characters
         inputBuffer += key;
         displayPasswordInputLine();
     }
@@ -415,6 +416,11 @@ bool connectToIRC() {
 
 
 void sendIRC(String command) {
+    if (command.length() > 510) {
+        Serial.println("Failed to send: Command too long");
+        return;
+    }
+
     if (client.connected()) {
         if (client.println(command))
             Serial.println("IRC: >>> " + command);
@@ -429,6 +435,12 @@ void sendIRC(String command) {
 void handleIRC() {
     while (client.available()) {
         String line = client.readStringUntil('\n');
+
+        // This is an anomaly, but it can happen and I wanted debug output for if it does
+        if (line.length() > 512)
+            Serial.println("WARNING: IRC line length exceeds 512 characters!");
+            line = line.substring(0, 512); // Truncate the line to 512 characters anyways
+
         Serial.println("IRC: " + line);
 
         int firstSpace = line.indexOf(' ');
