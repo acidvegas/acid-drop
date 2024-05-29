@@ -1057,6 +1057,7 @@ void updateStatusBar() {
 
 
 void printDeviceInfo() {
+    Serial.println("Gathering device info...");
     tft.fillScreen(TFT_BLACK);
 
     // Get MAC Address
