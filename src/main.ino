@@ -40,7 +40,7 @@ TFT_eSPI tft = TFT_eSPI();
 WiFiClientSecure client;
 
 // Initialize variables
-String inputBuffer = "";                      
+String inputBuffer = "";
 String ssid = "";
 String password = "";
 String nick = "";
