@@ -1,24 +1,3 @@
-// Added by acidvegas to hide warnings during build
-#ifdef TFT_MISO
-#undef TFT_MISO
-#endif
-#ifdef TFT_MOSI
-#undef TFT_MOSI
-#endif
-#ifdef TFT_CS
-#undef TFT_CS
-#endif
-#ifdef TFT_DC
-#undef TFT_DC
-#endif
-#ifdef TFT_RST
-#undef TFT_RST
-#endif
-#ifdef TFT_BL
-#undef TFT_BL
-#endif
-
-
 // ST7789 240 x 280 display with no chip select line
 #define USER_SETUP_ID 210
 
