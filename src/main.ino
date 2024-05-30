@@ -558,13 +558,17 @@ int calculateLinesRequired(String message) {
     for (unsigned int i = 0; i < message.length(); i++) {
         char c = message[i];
         if (c == '\x03') {
-            // Skip color code sequences from calculate instead of render to solve nick overlay issue
-            while (i < message.length() && (isdigit(message[i + 1]) || message[i + 1] == ',')) {
+            // Check for foreground color
+            if (i + 1 < message.length() && isdigit(message[i + 1])) {
                 i++;
-                if (isdigit(message[i + 1])) {
+                if (i + 1 < message.length() && isdigit(message[i + 1])) {
                     i++;
                 }
-                if (message[i] == ',' && isdigit(message[i + 1])) {
+            }
+            // Check for background color
+            if (i + 1 < message.length() && message[i + 1] == ',' && isdigit(message[i + 2])) {
+                i += 2; // Skip the comma
+                if (i + 1 < message.length() && isdigit(message[i + 1])) {
                     i++;
                 }
             }
@@ -579,6 +583,7 @@ int calculateLinesRequired(String message) {
 
     return linesRequired;
 }
+
 
 void displayCenteredText(String text) {
     tft.fillScreen(TFT_BLACK);
