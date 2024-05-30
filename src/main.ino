@@ -993,9 +993,9 @@ void displayLines() {
             String senderNick = line.substring(startIndex, endIndex);
             String actionMessage = line.substring(endIndex + 1);
             tft.setTextColor(nickColors[senderNick]);
-            tft.print(senderNick + " ");
-            tft.setTextColor(TFT_WHITE);
-            tft.print(actionMessage);
+            tft.print(senderNick);
+            tft.setTextColor(TFT_MAGENTA);
+            tft.print(" " + actionMessage);
             cursorY += CHAR_HEIGHT;
         } else {
             int colonIndex = line.indexOf(':');
