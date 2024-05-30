@@ -972,7 +972,7 @@ void displayLines() {
             tft.print(kicker);
             cursorY += CHAR_HEIGHT;
         } else if (line.startsWith("MODE ")) {
-            tft.setTextColor(TFT_YELLOW);
+            tft.setTextColor(TFT_BLUE);
             tft.print("MODE ");
             String modeChange = line.substring(5);
             tft.setTextColor(TFT_WHITE);
