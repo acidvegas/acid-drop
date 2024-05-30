@@ -555,17 +555,30 @@ int calculateLinesRequired(String message) {
     int linesRequired = 1;
     int lineWidth = 0;
 
-    for (char c : message) {
-        lineWidth += tft.textWidth(String(c));
-        if (lineWidth > SCREEN_WIDTH) {
-            linesRequired++;
-            lineWidth = tft.textWidth(String(c));
+    for (unsigned int i = 0; i < message.length(); i++) {
+        char c = message[i];
+        if (c == '\x03') {
+            // Skip color code sequences from calculate instead of render to solve nick overlay issue
+            while (i < message.length() && (isdigit(message[i + 1]) || message[i + 1] == ',')) {
+                i++;
+                if (isdigit(message[i + 1])) {
+                    i++;
+                }
+                if (message[i] == ',' && isdigit(message[i + 1])) {
+                    i++;
+                }
+            }
+        } else if (c != '\x02' && c != '\x0F' && c != '\x1F') { // Ignore other formatting codes as they are not as prevalent
+            lineWidth += tft.textWidth(String(c));
+            if (lineWidth > SCREEN_WIDTH) {
+                linesRequired++;
+                lineWidth = tft.textWidth(String(c));
+            }
         }
     }
 
     return linesRequired;
 }
-
 
 void displayCenteredText(String text) {
     tft.fillScreen(TFT_BLACK);
@@ -872,10 +885,29 @@ void displayLines() {
     tft.fillRect(0, STATUS_BAR_HEIGHT, SCREEN_WIDTH, SCREEN_HEIGHT - STATUS_BAR_HEIGHT - INPUT_LINE_HEIGHT, TFT_BLACK);
 
     int cursorY = STATUS_BAR_HEIGHT;
+    int totalLinesHeight = 0;
+    std::vector<int> lineHeights;
+
+    // Calculate total height needed for all lines
+    for (const String& line : lines) {
+        int lineHeight = calculateLinesRequired(line) * CHAR_HEIGHT;
+        lineHeights.push_back(lineHeight);
+        totalLinesHeight += lineHeight;
+    }
+
+    // Remove lines from the top if they exceed the screen height
+    while (totalLinesHeight > SCREEN_HEIGHT - STATUS_BAR_HEIGHT - INPUT_LINE_HEIGHT) {
+        totalLinesHeight -= lineHeights.front();
+        lines.erase(lines.begin());
+        mentions.erase(mentions.begin());
+        lineHeights.erase(lineHeights.begin());
+    }
+
+    // Render each line
     for (size_t i = 0; i < lines.size(); ++i) {
         const String& line = lines[i];
         bool mention = mentions[i];
-        
+
         tft.setCursor(0, cursorY);
 
         if (line.startsWith("JOIN ")) {
@@ -940,7 +972,7 @@ void displayLines() {
             tft.print(kicker);
             cursorY += CHAR_HEIGHT;
         } else if (line.startsWith("MODE ")) {
-            tft.setTextColor(TFT_BLUE);
+            tft.setTextColor(TFT_YELLOW);
             tft.print("MODE ");
             String modeChange = line.substring(5);
             tft.setTextColor(TFT_WHITE);
@@ -961,9 +993,9 @@ void displayLines() {
             String senderNick = line.substring(startIndex, endIndex);
             String actionMessage = line.substring(endIndex + 1);
             tft.setTextColor(nickColors[senderNick]);
-            tft.print(senderNick);
-            tft.setTextColor(TFT_MAGENTA);
-            tft.print(" " + actionMessage);
+            tft.print(senderNick + " ");
+            tft.setTextColor(TFT_WHITE);
+            tft.print(actionMessage);
             cursorY += CHAR_HEIGHT;
         } else {
             int colonIndex = line.indexOf(':');
