@@ -1,3 +1,5 @@
+// src/main.ino
+
 #include <TFT_eSPI.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
@@ -13,8 +15,6 @@
 #include "config.h"
 
 TFT_eSPI tft = TFT_eSPI();
-
-
 
 void setup() {
     // Initialize I2C to read keyboard input
@@ -45,13 +45,23 @@ void setup() {
     displayCenteredText("SCANNING WIFI");
     delay(1000);
 
-    preferences.begin("wifi", false);  // Start preferences with namespace "wifi"
-    ssid = preferences.getString("ssid", "");
-    password = preferences.getString("password", "");
+    // Attempt to connect to WiFi using saved profiles
+    loadWiFiProfiles();
 
-    if (ssid != "" && password != "") {
-        connectToWiFi();
-    } else {
+    bool connected = false;
+    if (!wifiProfiles.empty()) {
+        for (const auto& profile : wifiProfiles) {
+            ssid = profile.ssid;
+            password = profile.password;
+            if (connectToWiFi()) {
+                connected = true;
+                break;
+            }
+        }
+    }
+
+    if (!connected) {
+        debugPrint("No saved profiles connected. Scanning for networks...");
         scanWiFiNetworks();
         displayWiFiNetworks();
     }
@@ -70,14 +80,14 @@ void setup() {
 
 void loop() {
     unsigned long currentMillis = millis();
-    
+
     // Update the status bar if enough time has passed
     if (currentMillis - lastStatusUpdateTime >= STATUS_UPDATE_INTERVAL) {
         updateStatusBar();
         lastStatusUpdateTime = currentMillis;
     }
 
-    if (ssid.isEmpty() && !enteringPassword) {
+    if (wifiState == WIFI_STATE_DISCONNECTED && ssid.isEmpty() && !enteringPassword) {
         char incoming = getKeyboardInput();
         if (incoming != 0) {
             handleWiFiSelection(incoming);
@@ -88,6 +98,25 @@ void loop() {
         if (incoming != 0) {
             handlePasswordInput(incoming);
             lastActivityTime = millis();
+        }
+    } else if (wifiState == WIFI_STATE_SCANNING) {
+        // Don't attempt to reconnect while scanning
+    } else if (WiFi.status() != WL_CONNECTED) {
+        debugPrint("WiFi not connected. Attempting to reconnect...");
+        bool reconnected = false;
+        for (const auto& profile : wifiProfiles) {
+            ssid = profile.ssid;
+            password = profile.password;
+            if (connectToWiFi()) {
+                reconnected = true;
+                break;
+            }
+        }
+
+        if (!reconnected) {
+            displayCenteredText("RECONNECTING TO WIFI");
+            scanWiFiNetworks();
+            displayWiFiNetworks();
         }
     } else {
         if (displayingTopic && currentMillis - lastTopicDisplayTime > 5000) { // Display topic for 5 seconds
@@ -115,7 +144,8 @@ void loop() {
                 }
             } else {
                 displayCenteredText("RECONNECTING TO WIFI");
-                WiFi.begin(ssid.c_str(), password.c_str());
+                scanWiFiNetworks();
+                displayWiFiNetworks();
             }
         }
 

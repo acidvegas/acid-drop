@@ -1,3 +1,5 @@
+// src/boot.h
+
 #define logo_width 199
 #define logo_height 165
 static unsigned char logo_bits[] = {

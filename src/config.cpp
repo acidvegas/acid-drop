@@ -1,3 +1,5 @@
+// src/config.cpp
+
 #include "config.h"
 
 const char* user = NICK;

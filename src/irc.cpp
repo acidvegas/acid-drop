@@ -1,3 +1,5 @@
+// src/irc.cpp
+
 #include "irc.h"
 
 bool connectToIRC() {

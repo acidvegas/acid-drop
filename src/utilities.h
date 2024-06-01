@@ -1,3 +1,5 @@
+// src/utilities.h
+
 #ifndef UTILITIES_H
 #define UTILITIES_H
 
@@ -7,14 +9,12 @@
 #include "irc.h"
 #include <Wire.h>
 
-
 extern Preferences preferences;
 extern String ssid;
 extern String password;
 extern String nick;
 extern bool debugEnabled;
 extern bool screenOn;
-extern bool enteringPassword;
 extern unsigned long joinChannelTime;
 extern bool readyToJoinChannel;
 extern unsigned long lastStatusUpdateTime;
@@ -40,11 +40,8 @@ void updateTimeFromNTP();
 char getKeyboardInput();
 uint32_t generateRandomColor();
 void saveWiFiCredentials();
-void connectToWiFi();
 void printDeviceInfo();
 uint16_t getColorFromCode(int code);
 void handleKeyboardInput(char key);
-
-
 
 #endif

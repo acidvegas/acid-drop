@@ -1,6 +1,6 @@
+// src/pins.h
 
 #pragma once
-
 // board peripheral power control pin needs to be set to HIGH when using the peripheral
 
 #define BOARD_POWERON       10

@@ -1,7 +1,8 @@
+// src/utilities.cpp
+
 #include "utilities.h"
 #include "buffer.h"
 #include "display.h"
-
 
 Preferences preferences;
 String ssid = "";
@@ -9,7 +10,6 @@ String password = "";
 String nick = "";
 bool debugEnabled = false;
 bool screenOn = true;
-bool enteringPassword = false;
 unsigned long joinChannelTime = 0;
 bool readyToJoinChannel = false;
 unsigned long lastStatusUpdateTime = 0;
@@ -77,26 +77,6 @@ void saveWiFiCredentials() {
     preferences.putString("ssid", ssid);
     preferences.putString("password", password);
     debugPrint("WiFi credentials saved.");
-}
-
-void connectToWiFi() {
-    WiFi.begin(ssid.c_str(), password.c_str());
-    debugPrint("Connecting to WiFi...");
-    int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 10) {
-        delay(500);
-        displayCenteredText("CONNECTING TO " + ssid);
-        attempts++;
-    }
-    if (WiFi.status() == WL_CONNECTED) {
-        debugPrint("Connected to WiFi network: " + ssid);
-        displayCenteredText("CONNECTED TO " + ssid);
-        updateTimeFromNTP();
-        saveWiFiCredentials();
-    } else {
-        displayCenteredText("WIFI CONNECTION FAILED");
-        debugPrint("Failed to connect to WiFi.");
-    }
 }
 
 void updateTimeFromNTP() {

@@ -1,3 +1,5 @@
+// src/irc.h
+
 #ifndef IRC_MANAGER_H
 #define IRC_MANAGER_H
 

@@ -1,3 +1,5 @@
+// src/buffer.h
+
 #ifndef BUFFER_MANAGER_H
 #define BUFFER_MANAGER_H
 
