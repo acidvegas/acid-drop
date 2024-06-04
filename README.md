@@ -29,12 +29,14 @@ If you are familiar with or use [Internet Relay Chat](https://en.wikipedia.org/w
 
 # Command & Control
 ###### Menu controls
+On boot, if you press the `w` key, it will wipe all of the stored preferences.
+
 The device will scan for WiFi networks on boot. Once the list is displayed, you can scroll up and down the list with the `u` key for UP and the `d` key for down.
 
 ###### IRC commands
 | Command         | Description                 |
 | --------------- | --------------------------- |
-| `/info`        | Show hardware information   |
+| `/info`         | Show hardware information   |
 | `/me <message>` | Send an ACTION message      |
 | `/nick <new>`   | Change your NICK on IRC     |
 | `/raw <data>`   | Send RAW data to the server |
