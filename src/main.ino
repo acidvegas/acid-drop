@@ -4,6 +4,7 @@
 #include <vector>
 
 // Aurduino includes
+#include "nvs_flash.h"
 #include <Pangodream_18650_CL.h> // Power management
 #include <Preferences.h>
 #include <TFT_eSPI.h>
@@ -89,6 +90,22 @@ void displayXBM() {
     int y = (SCREEN_HEIGHT - logo_height) / 2;
 
     tft.drawXBitmap(x, y, logo_bits, logo_width, logo_height, TFT_GREEN);
+
+    // Time handling
+    unsigned long startTime = millis();
+    bool wipeInitiated = false;
+
+    // Check for 'w' key press during the logo display time
+    while (millis() - startTime < 3000) {
+        if (getKeyboardInput() == 'w') {
+            wipeNVS();
+            tft.fillScreen(TFT_BLACK);
+            displayCenteredText("NVS WIPED");
+            delay(2000);
+            wipeInitiated = true;
+            break;
+        }
+    }
 }
 
 
@@ -116,7 +133,6 @@ void setup() {
 
     // Display the boot screen
     displayXBM();
-    delay(3000);
 
     // Initialize the preferences
     setDefaultPreferences();
@@ -1135,16 +1151,21 @@ void parseAndDisplay(String line) {
 
 
 void handleKeyboardInput(char key) {
+    lastActivityTime = millis(); // Update last activity time to reset the inactivity timer
+
+    if (!screenOn) {
+        turnOnScreen();
+        return;
+    }
+
     if (key == '\n' || key == '\r') { // Enter
         if (inputBuffer.startsWith("/nick ")) {
             String newNick = inputBuffer.substring(6);
             sendIRC("NICK " + newNick);
             inputBuffer = "";
-            displayInputLine();
         } else if (inputBuffer.startsWith("/config")) {
             configScreen = true;
             configScreenStartTime = millis();
-            //displayPreferences();
             inputBuffer = "";
         } else if (inputBuffer.startsWith("/info")) {
             infoScreen = true;
@@ -1165,24 +1186,14 @@ void handleKeyboardInput(char key) {
         }
         inputBuffer = "";
         displayInputLine();
-        lastActivityTime = millis();
-        if (!screenOn)
-            turnOnScreen();
     } else if (key == '\b') { // Backspace
         if (inputBuffer.length() > 0) {
             inputBuffer.remove(inputBuffer.length() - 1);
             displayInputLine();
-            lastActivityTime = millis();
-            if (!screenOn)
-                turnOnScreen();
         }
     } else if (inputBuffer.length() <= 510) { // Ensure we do not exceed 512 characters (IRC limit)
         inputBuffer += key;
         displayInputLine();
-        lastActivityTime = millis();
-        if (!screenOn) {
-            turnOnScreen();
-        }
     }
 }
 
@@ -1204,9 +1215,8 @@ void displayInputLine() {
     }
 
     // Add a visual indicator if the max input length is reached
-    if (inputBuffer.length() >= 510) {
+    if (inputBuffer.length() >= 510)
         tft.setTextColor(TFT_RED);
-    }
 
     tft.print("> " + displayInput);
     tft.setTextColor(TFT_WHITE); // Reset text color
@@ -1329,6 +1339,11 @@ void printDeviceInfo() {
     Serial.println("Chip ID: " + String(chipId, HEX));
     Serial.println("MAC Address: " + macAddress);
     Serial.println("Chip Info: " + chipInfo);
+    Serial.println("Battery:");
+    Serial.println("  Pin Value: " + String(analogRead(34)));
+    Serial.println("  Average Pin Value: " + String(BL.pinRead()));
+    Serial.println("  Volts: " + String(BL.getBatteryVolts()));
+    Serial.println("  Charge Level: " + String(BL.getBatteryChargeLevel()) + "%");
     Serial.println("Memory:");
     Serial.println("  Flash: " + flashInfo);
     Serial.println("  PSRAM: " + psramInfo);
@@ -1348,6 +1363,11 @@ void printDeviceInfo() {
     tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("Chip ID:       "); tft.setTextColor(TFT_WHITE); tft.println(String(chipId, HEX)); line++;
     tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("MAC Address:   "); tft.setTextColor(TFT_WHITE); tft.println(macAddress); line++;
     tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("Chip Info:     "); tft.setTextColor(TFT_WHITE); tft.println(chipInfo); line++;
+    tft.setCursor(0, line * 16); tft.setTextColor(TFT_CYAN); tft.print("Battery:       "); tft.setTextColor(TFT_WHITE); tft.println(""); line++;
+    tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  Pin Value:   "); tft.setTextColor(TFT_WHITE); tft.println(analogRead(34)); line++;
+    tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  Avg Pin Val: "); tft.setTextColor(TFT_WHITE); tft.println(BL.pinRead()); line++;
+    tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  Volts:       "); tft.setTextColor(TFT_WHITE); tft.println(BL.getBatteryVolts()); line++;
+    tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  Charge Level:"); tft.setTextColor(TFT_WHITE); tft.println(BL.getBatteryChargeLevel() + "%"); line++;
     tft.setCursor(0, line * 16); tft.setTextColor(TFT_CYAN); tft.print("Memory:        "); tft.setTextColor(TFT_WHITE); tft.println(""); line++;
     tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  Flash:       "); tft.setTextColor(TFT_WHITE); tft.println(flashInfo); line++;
     tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  PSRAM:       "); tft.setTextColor(TFT_WHITE); tft.println(psramInfo); line++;
@@ -1362,4 +1382,19 @@ void printDeviceInfo() {
     } else {
         tft.setCursor(0, line * 16); tft.setTextColor(TFT_CYAN); tft.print("WiFi Info:     "); tft.setTextColor(TFT_WHITE); tft.println("Not connected"); line++;
     }
+}
+
+
+void wipeNVS() {
+    esp_err_t err = nvs_flash_erase();
+    if (err == ESP_OK)
+        Serial.println("NVS flash erase successful.");
+    else
+        Serial.println("Error erasing NVS flash!");
+
+    err = nvs_flash_init();
+    if (err == ESP_OK)
+        Serial.println("NVS flash init successful.");
+    else
+        Serial.println("Error initializing NVS flash!");
 }
