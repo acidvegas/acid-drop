@@ -2,20 +2,12 @@
   <img src="./.screens/aciddrop2.png" />
 </p>
 
-
 # Work in progress
-This is a custom firmware being developed for the [LilyGo T-Deck](https://www.lilygo.cc/products/t-deck), currently it is experimental & buggy.
+This is a custom firmware being developed for the [LilyGo T-Deck](https://www.lilygo.cc/products/t-deck), currently it is experimental & buggy while we are in beta status.
 
-I am terrible at C++ and still am trying to wrap my head around the language's logic, so most of this code has been shit out and written like a cowboy.
+If you are familiar with or use [Internet Relay Chat](https://en.wikipedia.org/wiki/IRC), we have a team of developers working on this project in **#comms** on **[irc.supernets.org](irc://irc.supernets.org)**, join us if you have ideas, bugs, or want to get your hands dirty & develope this project with us.
 
-The project started out with as IRC bridge for [Meshtastic](https://meshtastic.org/) over MQTT, just so I could say "we have IRC over radio", which later led to me modifying the official Meshtastic [firmware](https://github.com/meshtastic/firmware) to add extended features. I am deep in the rabbit hole of embedded development and am starting from scratch making this an entirely custom firmware.
-
-This is being developed in my free time as a fun project. It is no where near being useful.
-
-A compiled "release" will be done once I finish somoe fo the basic features, but feel free t compile this on your own to test it out!
-
-# Previews
-![](./.screens/preview1.png) ![](./.screens/preview2.png)
+![](./.screens/preview.png)
 
 # Flashing the Firmware
 ###### Using VS Code
@@ -25,23 +17,26 @@ A compiled "release" will be done once I finish somoe fo the basic features, but
 4. Hold down the trackball on the device, turn it on, and plug it in to the computer.
 5. Press **F1** and select `PlatformIO: Build`
 6. Press **F1** and select `PlatformIO: Upload`
-7. Press the RST *(reset)* button ont he device.
+7. Press the RST *(reset)* button on the device.
 
 ###### Using ESP Tool
-1. Take the `firmware.bin` file from the release page and download it. *(no releases yet, we still building)*
+1. Take the `firmware.bin` file from the release page and download it.
 2. Install [esptool](https://pypi.org/project/esptool/): `pip install esptool`
 3. Hold down the trackball on the device, turn it on, and plug it in to the computer.
 4. Confirm the serial device in your `/dev` directory *(Your device will likely be `/dev/ttyAMC0` or `/dev/ttyUSB0`)*
 5. Flash the device: `esptool.py --chip esp32-s3 --port /dev/ttyUSB0 --baud 115200 write_flash -z 0x1000 firmware.bin`
-6. Press the RST *(reset)* button ont he device.
+6. Press the RST *(reset)* button on the device.
 
-# Connecting to WiFi
-The device will scan for WiFi networks on boot. Once the list is displayed, you can scroll up and down the list with the "u" key for UP and the "d" key for down.
+# Command & Control
+###### Menu controls
+On boot, if you press the `w` key, it will wipe all of the stored preferences.
 
-# Commands
+The device will scan for WiFi networks on boot. Once the list is displayed, you can scroll up and down the list with the `u` key for UP and the `d` key for down.
+
+###### IRC commands
 | Command         | Description                 |
 | --------------- | --------------------------- |
-| `/debug`        | Show hardware information   |
+| `/info`         | Show hardware information   |
 | `/me <message>` | Send an ACTION message      |
 | `/nick <new>`   | Change your NICK on IRC     |
 | `/raw <data>`   | Send RAW data to the server |
@@ -54,13 +49,16 @@ The device will scan for WiFi networks on boot. Once the list is displayed, you 
 # Roapmap
 ###### Device functionality
 - [X] Screen timeout on inactivity *(default 30 seconds)*
-- [ ] Keyboard backlight timeout on 10 seconds oof inactivity.
+  - [ ] Keyboard backlight timeout with screen timeout
 - [ ] Trackball support
 - [ ] Speaker support
+- [ ] GPS support
+- [ ] Lora support
+- [ ] BLE support
 
 ###### Features
 - [X] Wifi scanning & selection menu
-- [ ] Saved wifi profiles
+  - [x] Saved wifi profiles
 - [ ] Wifi Hotspot
 - [ ] Notifcations Window *(All notifications will go here, from IRC, Gotify, Meshtastic, or anything)*
 - [X] Status bar *(Time, Date, Notification, Wifi, and Battery)*
@@ -73,8 +71,13 @@ The device will scan for WiFi networks on boot. Once the list is displayed, you 
 - [X] IRC Client
   - [X] `/raw` command for IRC client to send raw data to the server
   - [ ] Add scrolling backlog for IRC to see the last 200 messages
+  - [ ] Multi-buffer support *(`/join` & `/part` support with switching between buffers with `/0`, `/1`, `/2`, etc)* *(`/close` also for PM buffers or kicked from channels)*
+  - [ ] Status window for network to show RAW lines from the IRC server *(buffer 0)*
+  - [ ] Hilight monitor buffer
   - [X] Hilight support *(so we can see when people mention our NICK)*
   - [X] 99 color support
+  - [ ] `/pm` support *(it should open a buffer for pms)*
+  - [ ] NickServ support
 - [ ] ChatGPT
 - [ ] SSH Client
 - [ ] Wardriving
@@ -85,18 +88,14 @@ The device will scan for WiFi networks on boot. Once the list is displayed, you 
 - [ ] Spotify/Music player *(can we play audio throuigh Bluetoth headphones or the on-board speaker?)*
 - [ ] Syslog *(All serial logs will be displayed here for on-device debugging)*
 
-# Known issues
-- Messages that exceed the screen width and wrap to the next line will throw off thje logic of calculating the max lines able to be displayed on the screen. Messages eventually go off screen.
-- Input messages exceeding the screen width go off screen, and need to wrap and create a new input line, pushing up the backlog of messages.
-- Some colors are not working when its only a background color or only contains a space
-- Sometimes it will not connect to IRC even from reconnections, and you have to reboot and try again.
-- Screen timeout can occur during an IRC reconnection and blck keyboard input
-
-# Contributors
-Join us in **#comms** on **[irc.supernets.org](irc://irc.supernets.org)** if you want to get your hands dirty.
-
-# More screens..
+# Previews
+###### 99 Color support
 ![](./.screens/99colors.png)
+
+###### Full ASCII support for PUMPERS
+![](./.screens/ascii.png)
+
+###### Support for /HUEG
 ![](./.screens/hueg.png)
 
 ___
