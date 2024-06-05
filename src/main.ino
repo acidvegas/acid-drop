@@ -12,6 +12,7 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <Wire.h>
+#include <WireGuard-ESP32.h>
 
 // Local includes
 #include "bootScreen.h"
@@ -81,6 +82,9 @@ bool readyToJoinChannel = false;
 bool screenOn = true;
 int selectedNetworkIndex = 0;
 
+static WireGuard wg;
+
+
 
 // Main functions ---------------------------------------------------------------------------------
 void displayXBM() {
@@ -107,6 +111,13 @@ void displayXBM() {
             break;
         }
     }
+}
+
+
+void wgConnect(const IPAddress& localIp, const char* privateKey, const char* endpointAddress, const char* publicKey, uint16_t endpointPort) {
+    //IPAddress localIp(192, 168, 1, 100);
+    //IPAddress endpointIp(192, 168, 1, 1);
+    wg.begin(localIp, privateKey, endpointAddress, publicKey, endpointPort);
 }
 
 
@@ -830,7 +841,7 @@ void turnOnScreen() {
 
 void updateTimeFromNTP() {
     Serial.println("Syncing time with NTP server...");
-    configTime(-5 * 3600, 0, "pool.ntp.org", "time.nist.gov");
+    configTime(-5 * 3600, 3600, "pool.ntp.org", "north-america.pool.ntp.org", "time.nist.gov");
 
     for (int i = 0; i < 10; ++i) { // Try up to 10 times
         delay(2000);
