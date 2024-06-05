@@ -149,3 +149,12 @@ void playRTTTL(const char* rtttl, int volume = 16383, int bpm = -1) {
         if (*p == ',') p++;
     }
 }
+
+
+void playNotificationSound() {
+    playTone(1000, 200);
+    delay(100);
+    playTone(1500, 200);
+    delay(100);
+    playTone(2000, 200);
+}

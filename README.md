@@ -52,6 +52,8 @@ The device will scan for WiFi networks on boot. Once the list is displayed, you 
   - [ ] Keyboard backlight timeout with screen timeout
 - [ ] Trackball support
 - [X] Speaker support
+  - [X] Bootup sounds
+  - [X] IRC mention sounds
 - [ ] GPS support
 - [ ] Lora support
 - [ ] BLE support
