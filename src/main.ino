@@ -8,6 +8,7 @@
 #include "nvs_flash.h"
 #include <Pangodream_18650_CL.h> // Power management
 #include <Preferences.h>
+#include <SD.h>
 #include <TFT_eSPI.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
@@ -848,6 +849,43 @@ void setBrightness(uint8_t value) {
     }
 
     level = value;
+}
+
+
+bool setupSD() {
+    digitalWrite(BOARD_SDCARD_CS, HIGH);
+    digitalWrite(RADIO_CS_PIN, HIGH);
+    digitalWrite(BOARD_TFT_CS, HIGH);
+
+    if (SD.begin(BOARD_SDCARD_CS, SPI, 800000U)) {
+        uint8_t cardType = SD.cardType();
+
+        if (cardType == CARD_NONE) {
+            Serial.println("No SD_MMC card attached");
+            return false;
+        } else {
+            Serial.print("SD_MMC Card Type: ");
+            if (cardType == CARD_MMC)
+                Serial.println("MMC");
+            else if (cardType == CARD_SD)
+                Serial.println("SDSC");
+            else if (cardType == CARD_SDHC)
+                Serial.println("SDHC");
+            else
+                Serial.println("UNKNOWN");
+
+            uint32_t cardSize = SD.cardSize() / (1024 * 1024);
+            uint32_t cardTotal = SD.totalBytes() / (1024 * 1024);
+            uint32_t cardUsed = SD.usedBytes() / (1024 * 1024);
+            Serial.printf("SD Card Size: %lu MB\n", cardSize);
+            Serial.printf("Total space: %lu MB\n",  cardTotal);
+            Serial.printf("Used space: %lu MB\n",   cardUsed);
+
+            return true;
+        }
+    }
+
+    return false;
 }
 
 
