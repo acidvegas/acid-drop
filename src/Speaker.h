@@ -8,6 +8,7 @@
 
 #include "pins.h"
 
+
 #define BOARD_I2S_PORT I2S_NUM_0
 #define SAMPLE_RATE 44100
 
@@ -39,6 +40,7 @@ void setupI2S() {
     i2s_set_clk(BOARD_I2S_PORT, SAMPLE_RATE, I2S_BITS_PER_SAMPLE_16BIT, I2S_CHANNEL_MONO);
 }
 
+
 void playTone(float frequency, int duration, int volume = 16383) {
     volume = constrain(volume, 0, 32767);
     const int wave_period = SAMPLE_RATE / frequency;
@@ -57,6 +59,7 @@ void playTone(float frequency, int duration, int volume = 16383) {
     }
 }
 
+
 void playRTTTL(const char* rtttl) {
     static AudioGeneratorRTTTL *rtttlGenerator = new AudioGeneratorRTTTL();
     static AudioOutputI2S *audioOutput = new AudioOutputI2S();
@@ -64,12 +67,14 @@ void playRTTTL(const char* rtttl) {
 
     audioOutput->begin();
     rtttlGenerator->begin(fileSource, audioOutput);
-    while (rtttlGenerator->isRunning()) {
+
+    while (rtttlGenerator->isRunning())
         rtttlGenerator->loop();
-    }
+
     rtttlGenerator->stop();
     fileSource->close();
 }
+
 
 void playNotificationSound() {
     playTone(1000, 200);
