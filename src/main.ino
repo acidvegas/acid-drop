@@ -133,6 +133,7 @@ void setup() {
     // Turn on power to the screen
     pinMode(TFT_BL, OUTPUT);
     digitalWrite(TFT_BL, HIGH);
+    setBrightness(8); // Set the screen brightness to 50%
 
     // Start the I2C bus for the keyboard
     Wire.begin(BOARD_I2C_SDA, BOARD_I2C_SCL);
@@ -145,13 +146,12 @@ void setup() {
 
     // Display the boot screen
     displayXBM();
-
+    
     // Initialize the preferences
     loadPreferences();
 
     // Initialize the speaker
     setupI2S(); // Do we want to keep this open or uninstall after each use to keep resources free?
-    //const char* rtttl_boot = "ff6_victory:d=4,o=5,b=120:32d6,32p,32d6,32p,32d6,32p,d6,a#,c6,16d6,8p,16c6,2d6"; // This will go in preferences soon
     const char* rtttl_boot = "TakeOnMe:d=4,o=4,b=450:8f#5,8f#5,8f#5,8d5,8p,8b,8p,8e5,8p,8e5,8p,8e5,8g#5,8g#5,8a5,8b5,8a5,8a5,8a5,8e5,8p,8d5,8p,8f#5,8p,8f#5,8p,8f#5,8e5,8e5,8f#5,8e5,8f#5,8f#5,8f#5,8d5,8p,8b,8p,8e5,8p,8e5,8p,8e5,8g#5,8g#5,8a5,8b5,8a5,8a5,8a5,8e5,8p,8d5,8p,8f#5,8p,8f#5,8p,8f#5,8e5,8e5";
     playRTTTL(rtttl_boot);
 
@@ -821,6 +821,36 @@ uint16_t getColorFromCode(int colorCode) {
 }
 
 
+void setBrightness(uint8_t value) {
+    static uint8_t level = 16;
+    static uint8_t steps = 16;
+    value = constrain(value, 0, steps); // Ensure the brightness value is within the valid range
+
+    if (value == 0) {
+        digitalWrite(BOARD_BL_PIN, 0);
+        delay(3);
+        level = 0;
+        return;
+    }
+
+    if (level == 0) {
+        digitalWrite(BOARD_BL_PIN, 1);
+        level = steps;
+        delayMicroseconds(30);
+    }
+
+    int from = steps - level;
+    int to = steps - value;
+    int num = (steps + to - from) % steps;
+    for (int i = 0; i < num; i++) {
+        digitalWrite(BOARD_BL_PIN, 0);
+        digitalWrite(BOARD_BL_PIN, 1);
+    }
+
+    level = value;
+}
+
+
 void turnOffScreen() {
     Serial.println("Screen turned off");
     tft.writecommand(TFT_DISPOFF);
@@ -1225,10 +1255,7 @@ void parseAndDisplay(String line) {
 void handleKeyboardInput(char key) {
     lastActivityTime = millis(); // Update last activity time to reset the inactivity timer
 
-    if (!screenOn) {
-        turnOnScreen();
-        return;
-    }
+    static bool altPressed = false;
 
     if (key == '\n' || key == '\r') { // Enter
         if (inputBuffer.startsWith("/nick ")) {
@@ -1263,9 +1290,6 @@ void handleKeyboardInput(char key) {
             inputBuffer.remove(inputBuffer.length() - 1);
             displayInputLine();
         }
-    } else if (inputBuffer.length() <= 510) { // Ensure we do not exceed 512 characters (IRC limit)
-        inputBuffer += key;
-        displayInputLine();
     }
 }
 
