@@ -141,7 +141,7 @@ void setup() {
     // Initialize the speaker
     setupI2S(); // Do we want to keep this open or uninstall after each use to keep resources free?
     //const char* rtttl_boot = "ff6_victory:d=4,o=5,b=120:32d6,32p,32d6,32p,32d6,32p,d6,a#,c6,16d6,8p,16c6,2d6"; // This will go in preferences soon
-    const char* rtttl_boot = "TakeOnMe:d=4,o=4,b=375:8f#5,8f#5,8f#5,8d5,8p,8b,8p,8e5,8p,8e5,8p,8e5,8g#5,8g#5,8a5,8b5";
+    const char* rtttl_boot = "TakeOnMe:d=4,o=4,b=450:8f#5,8f#5,8f#5,8d5,8p,8b,8p,8e5,8p,8e5,8p,8e5,8g#5,8g#5,8a5,8b5,8a5,8a5,8a5,8e5,8p,8d5,8p,8f#5,8p,8f#5,8p,8f#5,8e5,8e5,8f#5,8e5,8f#5,8f#5,8f#5,8d5,8p,8b,8p,8e5,8p,8e5,8p,8e5,8g#5,8g#5,8a5,8b5,8a5,8a5,8a5,8e5,8p,8d5,8p,8f#5,8p,8f#5,8p,8f#5,8e5,8e5";
     playRTTTL(rtttl_boot);
 
     // Setup the WiFi
