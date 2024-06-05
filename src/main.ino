@@ -4,6 +4,7 @@
 #include <vector>
 
 // Aurduino includes
+#include <esp_wifi.h> // Needed for Mac spoofing
 #include "nvs_flash.h"
 #include <Pangodream_18650_CL.h> // Power management
 #include <Preferences.h>
@@ -135,7 +136,14 @@ void setup() {
     displayXBM();
 
     // Initialize the preferences
+    setDefaultPreferences();
     loadPreferences();
+
+    // Setup the WiFi
+    WiFi.mode(WIFI_STA);
+    WiFi.setHostname("acid-drop"); // Turn into a preference
+    WiFi.onEvent(WiFiEvent);
+    randomizeMacAddress();
 
     // Connect to WiFi if credentials are stored, otherwise scan for networks
     if (wifi_ssid.length() > 0 && wifi_password.length() > 0) {
@@ -225,49 +233,60 @@ void loop() {
 }
 
 
-void loadPreferences() {
+void setDefaultPreferences() {
     preferences.begin("config", false);
 
     // IRC preferences
     if (!preferences.isKey("irc_nickname"))
         preferences.putString("irc_nickname", "ACID_" + String(random(1000, 10000)));
-    irc_nickname = preferences.getString("irc_nickname");
 
     if (!preferences.isKey("irc_username"))
         preferences.putString("irc_username", "tdeck");
-    irc_username = preferences.getString("irc_username");
 
     if (!preferences.isKey("irc_realname"))
         preferences.putString("irc_realname", "ACID DROP Firmware");
-    irc_realname = preferences.getString("irc_realname");
 
     if (!preferences.isKey("irc_server"))
         preferences.putString("irc_server", "irc.supernets.org");
-    irc_server = preferences.getString("irc_server");
 
     if (!preferences.isKey("irc_port"))
         preferences.putInt("irc_port", 6667);
-    irc_port = preferences.getInt("irc_port");
 
     if (!preferences.isKey("irc_tls"))
         preferences.putBool("irc_tls", false);
-    irc_tls = preferences.getBool("irc_tls");
 
     if (!preferences.isKey("irc_channel"))
         preferences.putString("irc_channel", "#comms");
-    irc_channel = preferences.getString("irc_channel");
 
     if (!preferences.isKey("irc_nickserv"))
         preferences.putString("irc_nickserv", "");
-    irc_nickserv = preferences.getString("irc_nickserv");
 
     // WiFi preferences
     if (!preferences.isKey("wifi_ssid"))
         preferences.putString("wifi_ssid", "");
-    wifi_ssid = preferences.getString("wifi_ssid");
 
     if (!preferences.isKey("wifi_password"))
         preferences.putString("wifi_password", "");
+
+    preferences.end();
+}
+
+
+void loadPreferences() {
+    preferences.begin("config", true);
+
+    // IRC preferences
+    irc_nickname = preferences.getString("irc_nickname");
+    irc_username = preferences.getString("irc_username");
+    irc_realname = preferences.getString("irc_realname");
+    irc_server = preferences.getString("irc_server");
+    irc_port = preferences.getInt("irc_port");
+    irc_tls = preferences.getBool("irc_tls");
+    irc_channel = preferences.getString("irc_channel");
+    irc_nickserv = preferences.getString("irc_nickserv");
+
+    // WiFi preferences
+    wifi_ssid = preferences.getString("wifi_ssid");
     wifi_password = preferences.getString("wifi_password");
 
     preferences.end();
@@ -278,10 +297,30 @@ void loadPreferences() {
 
 
 // WiFi functions ---------------------------------------------------------------------------------
+void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
+    switch (event) {
+        case SYSTEM_EVENT_STA_CONNECTED:
+            Serial.println("WiFi connected");
+            break;
+        case SYSTEM_EVENT_STA_DISCONNECTED:
+            Serial.println("WiFi disconnected");
+            break;
+        case SYSTEM_EVENT_STA_GOT_IP:
+            Serial.println("WiFi got IP address: " + WiFi.localIP().toString());
+            break;
+        case SYSTEM_EVENT_STA_LOST_IP:
+            Serial.println("WiFi lost IP address");
+            break;
+        default:
+            break;
+    }
+}
+
+
 void connectToWiFi(String ssid, String password) {
     Serial.println("Connecting to WiFi network: " + ssid);
     WiFi.begin(ssid.c_str(), password.c_str());
-    
+
     // Wait for the WiFi connection to complete (or timeout after 10 seconds)
     int attempts = 0;
     while (WiFi.status() != WL_CONNECTED && attempts < 20) {
@@ -292,7 +331,6 @@ void connectToWiFi(String ssid, String password) {
 
     // Handle the connection result
     if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("Connected to WiFi!");
         displayCenteredText("CONNECTED TO " + ssid);
 
         // Sync time with NTP server
@@ -324,6 +362,40 @@ void connectToWiFi(String ssid, String password) {
         wifi_password = "";
 
         scanWiFiNetworks(); // Rescan for networks
+    }
+}
+
+
+void randomizeMacAddress() {
+    Serial.println("Current MAC Address: " + WiFi.macAddress());
+
+    uint8_t new_mac[6];
+
+    for (int i = 0; i < 6; ++i)
+        new_mac[i] = random(0x00, 0xFF);
+
+    if (esp_wifi_set_mac(WIFI_IF_STA, new_mac) == ESP_OK)
+        Serial.println("New MAC Address: " + WiFi.macAddress());
+    else
+        Serial.print("Failed to set new MAC Address");
+}
+
+
+// Need to utilize this function still
+String get_encryption_type(wifi_auth_mode_t encryptionType) {
+    switch (encryptionType) {
+        case (WIFI_AUTH_OPEN):
+            return "Open";
+        case (WIFI_AUTH_WEP):
+            return "WEP";
+        case (WIFI_AUTH_WPA_PSK):
+            return "WPA_PSK";
+        case (WIFI_AUTH_WPA2_PSK):
+            return "WPA2_PSK";
+        case (WIFI_AUTH_WPA_WPA2_PSK):
+            return "WPA_WPA2_PSK";
+        case (WIFI_AUTH_WPA2_ENTERPRISE):
+            return "WPA2_ENTERPRISE";
     }
 }
 
