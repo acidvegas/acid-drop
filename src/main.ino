@@ -133,16 +133,16 @@ void setup() {
     tft.invertDisplay(1);
     Serial.println("TFT initialized");
 
-    // Initialize the speaker
-    setupI2S(); // Do we want to keep this open or uninstall after each use to keep resources free?
-    const char* rtttl_boot = "ff6_victory:d=4,o=5,b=100:32d6,32p,32d6,32p,32d6,32p,d6,a#,c6,16d6,8p,16c6,2d6"; // This will go in preferences soon
-    playRTTTL(rtttl_boot);
-
     // Display the boot screen
     displayXBM();
 
     // Initialize the preferences
     loadPreferences();
+
+    // Initialize the speaker
+    setupI2S(); // Do we want to keep this open or uninstall after each use to keep resources free?
+    const char* rtttl_boot = "ff6_victory:d=4,o=5,b=100:32d6,32p,32d6,32p,32d6,32p,d6,a#,c6,16d6,8p,16c6,2d6"; // This will go in preferences soon
+    playRTTTL(rtttl_boot);
 
     // Setup the WiFi
     WiFi.mode(WIFI_STA);
@@ -1157,6 +1157,9 @@ void parseAndDisplay(String line) {
                 String message = line.substring(colonPos + 1);
                 String senderNick = line.substring(1, line.indexOf('!'));
                 bool mention = message.indexOf(irc_nickname) != -1;
+
+                if (mention)
+                    playNotificationSound(); // Will need a check here in the future when we have the ability to turn on/off notification sounds...
 
                 if (message.startsWith(String("\x01") + "ACTION ") && message.endsWith("\x01")) {
                     String actionMessage = message.substring(8, message.length() - 1);
