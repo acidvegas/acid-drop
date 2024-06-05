@@ -14,8 +14,9 @@
 #include <Wire.h>
 
 // Local includes
-#include "boot_screen.h"
+#include "bootScreen.h"
 #include "pins.h"
+#include "Speaker.h"
 
 
 // Constants
@@ -81,7 +82,6 @@ bool screenOn = true;
 int selectedNetworkIndex = 0;
 
 
-
 // Main functions ---------------------------------------------------------------------------------
 void displayXBM() {
     tft.fillScreen(TFT_BLACK);
@@ -113,6 +113,7 @@ void displayXBM() {
 void setup() {
     // Initialize serial communication
     Serial.begin(115200);
+    while (!Serial);
     Serial.println("Booting device...");
 
     // Turn on the power to the board
@@ -131,6 +132,11 @@ void setup() {
     tft.setRotation(1);
     tft.invertDisplay(1);
     Serial.println("TFT initialized");
+
+    // Initialize the speaker
+    setupI2S(); // Do we want to keep this open or uninstall after each use to keep resources free?
+    const char* rtttl_boot = "ff6_victory:d=4,o=5,b=100:32d6,32p,32d6,32p,32d6,32p,d6,a#,c6,16d6,8p,16c6,2d6"; // This will go in preferences soon
+    playRTTTL(rtttl_boot);
 
     // Display the boot screen
     displayXBM();

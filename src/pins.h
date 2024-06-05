@@ -4,9 +4,10 @@
 // Board pin definitions ------------------------
 #define BOARD_POWERON       10
 
+// Speaker
 #define BOARD_I2S_WS        5
-#define BOARD_I2S_BCK       7
 #define BOARD_I2S_DOUT      6
+#define BOARD_I2S_BCK       7
 
 #define BOARD_I2C_SDA       18
 #define BOARD_I2C_SCL       8
@@ -55,7 +56,6 @@
 
 // Battery definitions
 #define CONV_FACTOR 1.8 // Conversion factor for the ADC to voltage conversion
-#define READS 20        // Number of readings for averaging
+#define READS       20  // Number of readings for averaging
 
 #define LILYGO_KB_SLAVE_ADDRESS 0x55
-
