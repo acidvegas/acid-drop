@@ -113,7 +113,6 @@ void displayXBM() {
 void setup() {
     // Initialize serial communication
     Serial.begin(115200);
-    while (!Serial);
     Serial.println("Booting device...");
 
     // Turn on the power to the board
@@ -141,7 +140,8 @@ void setup() {
 
     // Initialize the speaker
     setupI2S(); // Do we want to keep this open or uninstall after each use to keep resources free?
-    const char* rtttl_boot = "ff6_victory:d=4,o=5,b=100:32d6,32p,32d6,32p,32d6,32p,d6,a#,c6,16d6,8p,16c6,2d6"; // This will go in preferences soon
+    //const char* rtttl_boot = "ff6_victory:d=4,o=5,b=120:32d6,32p,32d6,32p,32d6,32p,d6,a#,c6,16d6,8p,16c6,2d6"; // This will go in preferences soon
+    const char* rtttl_boot = "TakeOnMe:d=4,o=4,b=375:8f#5,8f#5,8f#5,8d5,8p,8b,8p,8e5,8p,8e5,8p,8e5,8g#5,8g#5,8a5,8b5";
     playRTTTL(rtttl_boot);
 
     // Setup the WiFi
@@ -1204,6 +1204,8 @@ void parseAndDisplay(String line) {
             addLine("ERROR", "ERR_ERRONEUSNICKNAME", "error", TFT_RED, TFT_DARKGREY);
         } else if (command == "433") { // ERR_NICKNAMEINUSE
             addLine("ERROR", "ERR_NICKNAMEINUSE", "error", TFT_RED, TFT_DARKGREY);
+            irc_nickname = "ACID_" + String(random(1000, 9999)); // Generate a random nickname
+            sendIRC("NICK " + irc_nickname);                     // Attempt to change to the random nickname
         }
     }
 }

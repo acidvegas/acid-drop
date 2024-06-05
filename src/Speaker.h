@@ -2,36 +2,14 @@
 
 #include <Arduino.h>
 #include <driver/i2s.h>
+#include <AudioGeneratorRTTTL.h>
+#include <AudioOutputI2S.h>
+#include <AudioFileSourcePROGMEM.h>
 
 #include "pins.h"
 
 #define BOARD_I2S_PORT I2S_NUM_0
 #define SAMPLE_RATE 44100
-
-
-const float NOTE_FREQS[] = {
-    261.63, 277.18, 293.66, 311.13, 329.63, 349.23, 369.99, 392.00, 415.30, 440.00, 466.16, 493.88, // C4 to B4
-    523.25, 554.37, 587.33, 622.25, 659.25, 698.46, 739.99, 783.99, 830.61, 880.00, 932.33, 987.77, // C5 to B5
-    1046.50, 1108.73, 1174.66, 1244.51, 1318.51, 1396.91, 1480.00, 1568.00, 1661.22, 1760.00, 1864.66, 1975.53, // C6 to B6
-    2093.00, 2217.46, 2349.32, 2489.02, 2637.02, 2793.83, 2960.00, 3136.00, 3322.44, 3520.00, 3729.31, 3951.07  // C7 to B7
-};
-
-
-float getNoteFrequency(char note, int octave) {
-    if (note == 'p') return 0;  // Pause
-    int noteIndex = 0;
-    switch (note) {
-        case 'c': noteIndex = 0; break;
-        case 'd': noteIndex = 2; break;
-        case 'e': noteIndex = 4; break;
-        case 'f': noteIndex = 5; break;
-        case 'g': noteIndex = 7; break;
-        case 'a': noteIndex = 9; break;
-        case 'b': noteIndex = 11; break;
-        default: return 0;
-    }
-    return NOTE_FREQS[noteIndex + ((octave - 4) * 12)];
-}
 
 
 void setupI2S() {
@@ -41,7 +19,7 @@ void setupI2S() {
         .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
         .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
         .communication_format = I2S_COMM_FORMAT_STAND_I2S,
-        .intr_alloc_flags = 0,  // Default interrupt priority
+        .intr_alloc_flags = 0,
         .dma_buf_count = 8,
         .dma_buf_len = 64,
         .use_apll = false,
@@ -61,9 +39,8 @@ void setupI2S() {
     i2s_set_clk(BOARD_I2S_PORT, SAMPLE_RATE, I2S_BITS_PER_SAMPLE_16BIT, I2S_CHANNEL_MONO);
 }
 
-
 void playTone(float frequency, int duration, int volume = 16383) {
-    volume = constrain(volume, 0, 32767); // Max volume is 32767, we default to half volume if not specified
+    volume = constrain(volume, 0, 32767);
     const int wave_period = SAMPLE_RATE / frequency;
     int16_t sample_buffer[wave_period];
 
@@ -80,76 +57,19 @@ void playTone(float frequency, int duration, int volume = 16383) {
     }
 }
 
+void playRTTTL(const char* rtttl) {
+    static AudioGeneratorRTTTL *rtttlGenerator = new AudioGeneratorRTTTL();
+    static AudioOutputI2S *audioOutput = new AudioOutputI2S();
+    static AudioFileSourcePROGMEM *fileSource = new AudioFileSourcePROGMEM(rtttl, strlen(rtttl));
 
-void playRTTTL(const char* rtttl, int volume = 16383, int bpm = -1) {
-    int default_duration = 4;
-    int default_octave = 6;
-    int internal_bpm = 63;
-
-    const char* p = rtttl;
-
-    // Skip name
-    while (*p && *p != ':') p++;
-    if (*p == ':') p++;
-
-    while (*p && *p != ':') {
-        char param = *p++;
-        if (*p == '=') p++;
-        int value = atoi(p);
-        while (*p && isdigit(*p)) p++;
-        if (*p == ',') p++;
-        switch (param) {
-            case 'd': default_duration = value; break;
-            case 'o': default_octave = value; break;
-            case 'b': internal_bpm = value; break;
-        }
+    audioOutput->begin();
+    rtttlGenerator->begin(fileSource, audioOutput);
+    while (rtttlGenerator->isRunning()) {
+        rtttlGenerator->loop();
     }
-
-    if (*p == ':') p++;
-
-    if (bpm != -1)
-        internal_bpm = bpm;
-
-    int beat_duration = 60000 / internal_bpm;
-
-    while (*p) {
-        int duration = 0;
-        if (isdigit(*p)) {
-            duration = atoi(p);
-            while (isdigit(*p)) p++;
-        } else {
-            duration = default_duration;
-        }
-
-        char note = *p++;
-        int frequency = getNoteFrequency(note, default_octave);
-
-        if (*p == '#') {
-            frequency = getNoteFrequency(note + 1, default_octave);
-            p++;
-        }
-
-        int octave = default_octave;
-
-        if (isdigit(*p))
-            octave = *p++ - '0';
-
-        if (*p == '.') {
-            duration = duration * 1.5;
-            p++;
-        }
-
-        int note_duration = (beat_duration * 4) / duration;
-
-        if (frequency > 0)
-            playTone(frequency, note_duration, volume);
-        else
-            delay(note_duration);
-
-        if (*p == ',') p++;
-    }
+    rtttlGenerator->stop();
+    fileSource->close();
 }
-
 
 void playNotificationSound() {
     playTone(1000, 200);
