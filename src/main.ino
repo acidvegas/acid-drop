@@ -136,7 +136,6 @@ void setup() {
     displayXBM();
 
     // Initialize the preferences
-    setDefaultPreferences();
     loadPreferences();
 
     // Setup the WiFi
@@ -233,60 +232,49 @@ void loop() {
 }
 
 
-void setDefaultPreferences() {
+void loadPreferences() {
     preferences.begin("config", false);
 
     // IRC preferences
     if (!preferences.isKey("irc_nickname"))
         preferences.putString("irc_nickname", "ACID_" + String(random(1000, 10000)));
+    irc_nickname = preferences.getString("irc_nickname");
 
     if (!preferences.isKey("irc_username"))
         preferences.putString("irc_username", "tdeck");
+    irc_username = preferences.getString("irc_username");
 
     if (!preferences.isKey("irc_realname"))
         preferences.putString("irc_realname", "ACID DROP Firmware");
+    irc_realname = preferences.getString("irc_realname");
 
     if (!preferences.isKey("irc_server"))
         preferences.putString("irc_server", "irc.supernets.org");
+    irc_server = preferences.getString("irc_server");
 
     if (!preferences.isKey("irc_port"))
         preferences.putInt("irc_port", 6667);
+    irc_port = preferences.getInt("irc_port");
 
     if (!preferences.isKey("irc_tls"))
         preferences.putBool("irc_tls", false);
+    irc_tls = preferences.getBool("irc_tls");
 
     if (!preferences.isKey("irc_channel"))
         preferences.putString("irc_channel", "#comms");
+    irc_channel = preferences.getString("irc_channel");
 
     if (!preferences.isKey("irc_nickserv"))
         preferences.putString("irc_nickserv", "");
+    irc_nickserv = preferences.getString("irc_nickserv");
 
     // WiFi preferences
     if (!preferences.isKey("wifi_ssid"))
         preferences.putString("wifi_ssid", "");
+    wifi_ssid = preferences.getString("wifi_ssid");
 
     if (!preferences.isKey("wifi_password"))
         preferences.putString("wifi_password", "");
-
-    preferences.end();
-}
-
-
-void loadPreferences() {
-    preferences.begin("config", true);
-
-    // IRC preferences
-    irc_nickname = preferences.getString("irc_nickname");
-    irc_username = preferences.getString("irc_username");
-    irc_realname = preferences.getString("irc_realname");
-    irc_server = preferences.getString("irc_server");
-    irc_port = preferences.getInt("irc_port");
-    irc_tls = preferences.getBool("irc_tls");
-    irc_channel = preferences.getString("irc_channel");
-    irc_nickserv = preferences.getString("irc_nickserv");
-
-    // WiFi preferences
-    wifi_ssid = preferences.getString("wifi_ssid");
     wifi_password = preferences.getString("wifi_password");
 
     preferences.end();
@@ -382,7 +370,7 @@ void randomizeMacAddress() {
 
 
 // Need to utilize this function still
-String get_encryption_type(wifi_auth_mode_t encryptionType) {
+String getEncryptionType(wifi_auth_mode_t encryptionType) {
     switch (encryptionType) {
         case (WIFI_AUTH_OPEN):
             return "Open";
