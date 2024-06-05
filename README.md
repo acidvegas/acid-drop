@@ -51,7 +51,7 @@ The device will scan for WiFi networks on boot. Once the list is displayed, you 
 - [X] Screen timeout on inactivity *(default 30 seconds)*
   - [ ] Keyboard backlight timeout with screen timeout
 - [ ] Trackball support
-- [ ] Speaker support
+- [X] Speaker support
 - [ ] GPS support
 - [ ] Lora support
 - [ ] BLE support
