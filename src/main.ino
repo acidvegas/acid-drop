@@ -48,9 +48,6 @@ std::map<String, uint32_t> nickColors;
 std::vector<String> lines; // Possible rename to bufferLines ?
 std::vector<bool> mentions;
 std::vector<WiFiNetwork> wifiNetworks;
-
-// Global variables to cache preferences and buffers
-
 String inputBuffer = "";
 
 // Leftover crack variables (will be removed when preferences are done)
@@ -232,7 +229,7 @@ void loop() {
             if (readyToJoinChannel && millis() >= joinChannelTime) {
                 tft.fillScreen(TFT_BLACK);
                 updateStatusBar();
-                sendIRC("JOIN " + String(channel));
+                sendIRC("JOIN " + String(irc_channel));
                 readyToJoinChannel = false;
             }
 
@@ -244,9 +241,8 @@ void loop() {
             }
 
             // Handle inactivity timeout
-            if (screenOn && millis() - lastActivityTime > INACTIVITY_TIMEOUT) {
+            if (screenOn && millis() - lastActivityTime > INACTIVITY_TIMEOUT)
                 turnOffScreen();
-            }
         }
     }
 }
@@ -648,10 +644,10 @@ uint32_t generateRandomColor() {
 
 
 uint16_t getColorFromPercentage(int percentage) {
-    if (percentage > 75) return TFT_GREEN;
+    if      (percentage > 75) return TFT_GREEN;
     else if (percentage > 50) return TFT_YELLOW;
     else if (percentage > 25) return TFT_ORANGE;
-    else return TFT_RED;
+    else                      return TFT_RED;
 }
 
 
@@ -1169,7 +1165,7 @@ void parseAndDisplay(String line) {
         } else if (command == "PART" && line.indexOf(channel) != -1) {
             String senderNick = line.substring(1, line.indexOf('!'));
             addLine(senderNick, " has EMO-QUIT " + String(channel), "part");
-        } else if (command == "QUIT" && line.indexOf(channel) != -1) {
+        } else if (command == "QUIT")  {
             String senderNick = line.substring(1, line.indexOf('!'));
             addLine(senderNick, "", "quit");
         } else if (command == "NICK") {
@@ -1286,7 +1282,6 @@ void updateStatusBar() {
     Serial.println("Updating status bar...");
     uint16_t darkerGrey = tft.color565(25, 25, 25);
     tft.fillRect(0, 0, SCREEN_WIDTH, STATUS_BAR_HEIGHT, darkerGrey);
-
 
     // Display the time
     struct tm timeinfo;
@@ -1414,31 +1409,5 @@ void printDeviceInfo() {
         Serial.println("  Signal: " + wifiSignal);
         Serial.println("  Local IP: " + wifiLocalIP);
         Serial.println("  Gateway IP: " + wifiGatewayIP);
-    }
-
-    // Display on TFT
-    tft.fillScreen(TFT_BLACK);
-    int line = 0;
-    tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("Chip ID:       "); tft.setTextColor(TFT_WHITE); tft.println(String(chipId, HEX)); line++;
-    tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("MAC Address:   "); tft.setTextColor(TFT_WHITE); tft.println(macAddress); line++;
-    tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("Chip Info:     "); tft.setTextColor(TFT_WHITE); tft.println(chipInfo); line++;
-    tft.setCursor(0, line * 16); tft.setTextColor(TFT_CYAN); tft.print("Battery:       "); tft.setTextColor(TFT_WHITE); tft.println(""); line++;
-    tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  Pin Value:   "); tft.setTextColor(TFT_WHITE); tft.println(analogRead(34)); line++;
-    tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  Avg Pin Val: "); tft.setTextColor(TFT_WHITE); tft.println(BL.pinRead()); line++;
-    tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  Volts:       "); tft.setTextColor(TFT_WHITE); tft.println(BL.getBatteryVolts()); line++;
-    tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  Charge Level:"); tft.setTextColor(TFT_WHITE); tft.println(BL.getBatteryChargeLevel() + "%"); line++;
-    tft.setCursor(0, line * 16); tft.setTextColor(TFT_CYAN); tft.print("Memory:        "); tft.setTextColor(TFT_WHITE); tft.println(""); line++;
-    tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  Flash:       "); tft.setTextColor(TFT_WHITE); tft.println(flashInfo); line++;
-    tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  PSRAM:       "); tft.setTextColor(TFT_WHITE); tft.println(psramInfo); line++;
-    tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  Heap:        "); tft.setTextColor(TFT_WHITE); tft.println(heapInfo); line++;
-    if (WiFi.status() == WL_CONNECTED) {
-        tft.setCursor(0, line * 16); tft.setTextColor(TFT_CYAN); tft.print("WiFi Info:     "); tft.setTextColor(TFT_WHITE); tft.println(""); line++;
-        tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  SSID:        "); tft.setTextColor(TFT_WHITE); tft.println(wifiSSID); line++;
-        tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  Channel:     "); tft.setTextColor(TFT_WHITE); tft.println(wifiChannel); line++;
-        tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  Signal:      "); tft.setTextColor(TFT_WHITE); tft.println(wifiSignal); line++;
-        tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  Local IP:    "); tft.setTextColor(TFT_WHITE); tft.println(wifiLocalIP); line++;
-        tft.setCursor(0, line * 16); tft.setTextColor(TFT_YELLOW); tft.print("  Gateway IP:  "); tft.setTextColor(TFT_WHITE); tft.println(wifiGatewayIP); line++;
-    } else {
-        tft.setCursor(0, line * 16); tft.setTextColor(TFT_CYAN); tft.print("WiFi Info:     "); tft.setTextColor(TFT_WHITE); tft.println("Not connected"); line++;
     }
 }
