@@ -57,6 +57,7 @@ The device will scan for WiFi networks on boot. Once the list is displayed, you 
 - [ ] GPS support
 - [ ] Lora support
 - [ ] BLE support
+- [ ] SD card support
 
 ###### Features
 - [X] Wifi scanning & selection menu
@@ -85,8 +86,8 @@ The device will scan for WiFi networks on boot. Once the list is displayed, you 
 - [ ] Wardriving
 - [ ] Evil Portal AP
 - [ ] Local Network Probe *(Scans for devices on the wifi network you are connected to, add port scanning)*
-- [ ] Gotify
-- [ ] Meshtastic
+- [ ] Gotify *(in progress)*
+- [ ] Meshtastic *(in progress)*
 - [ ] Spotify/Music player *(can we play audio throuigh Bluetoth headphones or the on-board speaker?)*
 - [ ] Syslog *(All serial logs will be displayed here for on-device debugging)*
 
