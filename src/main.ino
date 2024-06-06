@@ -136,6 +136,16 @@ void setup() {
     digitalWrite(TFT_BL, HIGH);
     setBrightness(8); // Set the screen brightness to 50%
 
+    // Give power to the SD card
+    pinMode(BOARD_SDCARD_CS, OUTPUT);
+    digitalWrite(BOARD_SDCARD_CS, HIGH);
+    pinMode(BOARD_SPI_MISO, INPUT_PULLUP);
+    SPI.begin(BOARD_SPI_SCK, BOARD_SPI_MISO, BOARD_SPI_MOSI); //SD
+    
+    // Turn on power to the radio
+    pinMode(RADIO_CS_PIN, OUTPUT);
+    digitalWrite(RADIO_CS_PIN, HIGH);
+    
     // Start the I2C bus for the keyboard
     Wire.begin(BOARD_I2C_SDA, BOARD_I2C_SCL);
 
