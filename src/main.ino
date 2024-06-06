@@ -1165,7 +1165,7 @@ void parseAndDisplay(String line) {
         } else if (command == "PART" && line.indexOf(channel) != -1) {
             String senderNick = line.substring(1, line.indexOf('!'));
             addLine(senderNick, " has EMO-QUIT " + String(channel), "part");
-        } else if (command == "QUIT")  {
+        } else if (command == "QUIT") {
             String senderNick = line.substring(1, line.indexOf('!'));
             addLine(senderNick, "", "quit");
         } else if (command == "NICK") {
