@@ -77,9 +77,11 @@ void playRTTTL(const char* rtttl) {
 
 
 void playNotificationSound() {
-    playTone(1000, 200);
+    playTone(1000, 150);
     delay(100);
-    playTone(1500, 200);
+    playTone(1500, 150);
     delay(100);
-    playTone(2000, 200);
+    playTone(2000, 150);
+    delay(100);
+    playTone(500, 150);
 }

@@ -6,13 +6,11 @@ SX1262 radio = new Module(RADIO_CS_PIN, RADIO_DIO1_PIN, RADIO_RST_PIN, RADIO_BUS
 
 
 bool setupRadio() {
-    digitalWrite(BOARD_SDCARD_CS, HIGH);
+    pinMode(RADIO_CS_PIN, OUTPUT);
     digitalWrite(RADIO_CS_PIN, HIGH);
-    digitalWrite(BOARD_TFT_CS, HIGH);
-    SPI.end();
-    SPI.begin(BOARD_SPI_SCK, BOARD_SPI_MISO, BOARD_SPI_MOSI); //SD
 
     int state = radio.begin(RADIO_FREQ);
+    
     if (state == RADIOLIB_ERR_NONE) {
         Serial.println("Start Radio success!");
     } else {
@@ -73,4 +71,32 @@ bool setupRadio() {
     //radio.setDio1Action(setFlag);
 
     return true;
+}
+
+bool transmit() {
+    int state = radio.transmit("Hello World!");
+
+    // you can also transmit byte array up to 256 bytes long
+    /*
+        byte byteArr[] = {0x01, 0x23, 0x45, 0x56, 0x78, 0xAB, 0xCD, 0xEF};
+        int state = radio.transmit(byteArr, 8);
+    */
+
+    if (state == RADIOLIB_ERR_NONE) {
+        Serial.println(F("Radio tramsmittion successful!"));
+        Serial.print(F("[SX1262] Datarate:\t"));
+        Serial.print(radio.getDataRate());
+        Serial.println(F(" bps"));
+        return true;
+    } else if (state == RADIOLIB_ERR_PACKET_TOO_LONG) {
+        Serial.println(F("Radio packet too long")); // 256 bytes is the maximum packet length
+        return false;
+    } else if (state == RADIOLIB_ERR_TX_TIMEOUT) {
+        Serial.println(F("Radio timeout"));
+        return false;
+    } else {
+        Serial.print(F("Radio error failed, code "));
+        Serial.println(state);
+        return false;
+    }
 }
