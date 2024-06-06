@@ -125,22 +125,26 @@ void wgConnect(const IPAddress& localIp, const char* privateKey, const char* end
 void setup() {
     // Initialize serial communication
     Serial.begin(115200);
+
+    // Wait for the serial monitor to open
+    //while (!Serial);
+
     Serial.println("Booting device...");
 
-    // Turn on the power to the board
+    // Give power to the board peripherals
     pinMode(BOARD_POWERON, OUTPUT); 
     digitalWrite(BOARD_POWERON, HIGH);
 
-    // Turn on power to the screen
+    // Give power to the screen
     pinMode(TFT_BL, OUTPUT);
     digitalWrite(TFT_BL, HIGH);
-    setBrightness(8); // Set the screen brightness to 50%
+    setBrightness(8); // Set the screen brightness to 50%)
 
     // Give power to the SD card
     pinMode(BOARD_SDCARD_CS, OUTPUT);
     digitalWrite(BOARD_SDCARD_CS, HIGH);
     pinMode(BOARD_SPI_MISO, INPUT_PULLUP);
-    SPI.begin(BOARD_SPI_SCK, BOARD_SPI_MISO, BOARD_SPI_MOSI); //SD
+    SPI.begin(BOARD_SPI_SCK, BOARD_SPI_MISO, BOARD_SPI_MOSI);
     
     // Turn on power to the radio
     pinMode(RADIO_CS_PIN, OUTPUT);
@@ -163,7 +167,7 @@ void setup() {
 
     // Initialize the speaker
     setupI2S(); // Do we want to keep this open or uninstall after each use to keep resources free?
-    const char* rtttl_boot = "TakeOnMe:d=4,o=4,b=450:8f#5,8f#5,8f#5,8d5,8p,8b,8p,8e5,8p,8e5,8p,8e5,8g#5,8g#5,8a5,8b5,8a5,8a5,8a5,8e5,8p,8d5,8p,8f#5,8p,8f#5,8p,8f#5,8e5,8e5,8f#5,8e5,8f#5,8f#5,8f#5,8d5,8p,8b,8p,8e5,8p,8e5,8p,8e5,8g#5,8g#5,8a5,8b5,8a5,8a5,8a5,8e5,8p,8d5,8p,8f#5,8p,8f#5,8p,8f#5,8e5,8e5";
+    const char* rtttl_boot = "TakeOnMe:d=4,o=4,b=500:8f#5,8f#5,8f#5,8d5,8p,8b,8p,8e5,8p,8e5,8p,8e5,8g#5,8g#5,8a5,8b5,8a5,8a5,8a5,8e5,8p,8d5,8p,8f#5,8p,8f#5,8p,8f#5,8e5,8e5,8f#5,8e5,8f#5,8f#5,8f#5,8d5,8p,8b,8p,8e5,8p,8e5,8p,8e5,8g#5,8g#5,8a5,8b5,8a5,8a5,8a5,8e5,8p,8d5,8p,8f#5,8p,8f#5,8p,8f#5,8e5,8e5";
     playRTTTL(rtttl_boot);
 
     // Setup the WiFi
