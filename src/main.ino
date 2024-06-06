@@ -1338,6 +1338,9 @@ void handleKeyboardInput(char key) {
             inputBuffer.remove(inputBuffer.length() - 1);
             displayInputLine();
         }
+    } else {
+        inputBuffer += key;
+        displayInputLine();
     }
 }
 
