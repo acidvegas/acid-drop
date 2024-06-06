@@ -1,5 +1,4 @@
-#include <RadioLib.h>
-#include "pins.h"
+#include "Lora.h"
 
 
 SX1262 radio = new Module(RADIO_CS_PIN, RADIO_DIO1_PIN, RADIO_RST_PIN, RADIO_BUSY_PIN);
@@ -14,7 +13,7 @@ bool setupRadio() {
     if (state == RADIOLIB_ERR_NONE) {
         Serial.println("Start Radio success!");
     } else {
-        Serial.print("Start Radio failed,code:");
+        Serial.print("Start Radio failed, code: ");
         Serial.println(state);
         return false;
     }
@@ -44,19 +43,19 @@ bool setupRadio() {
         return false;
     }
 
-    // set output power to 10 dBm (accepted range is -17 - 22 dBm)
+    // Set output power to 17 dBm (accepted range is -17 - 22 dBm)
     if (radio.setOutputPower(17) == RADIOLIB_ERR_INVALID_OUTPUT_POWER) {
         Serial.println(F("Selected output power is invalid for this module!"));
         return false;
     }
 
-    // set over current protection limit to 140 mA (accepted range is 45 - 140 mA) (set value to 0 to disable overcurrent protection)
+    // Set over current protection limit to 140 mA (accepted range is 45 - 140 mA)
     if (radio.setCurrentLimit(140) == RADIOLIB_ERR_INVALID_CURRENT_LIMIT) {
         Serial.println(F("Selected current limit is invalid for this module!"));
         return false;
     }
 
-    // set LoRa preamble length to 15 symbols (accepted range is 0 - 65535)
+    // Set LoRa preamble length to 15 symbols (accepted range is 0 - 65535)
     if (radio.setPreambleLength(15) == RADIOLIB_ERR_INVALID_PREAMBLE_LENGTH) {
         Serial.println(F("Selected preamble length is invalid for this module!"));
         return false;
@@ -67,9 +66,6 @@ bool setupRadio() {
         return false;
     }
 
-    // set the function that will be called when new packet is received
-    //radio.setDio1Action(setFlag);
-
     return true;
 }
 
@@ -77,14 +73,8 @@ bool setupRadio() {
 bool transmit() {
     int state = radio.transmit("Hello World!");
 
-    // you can also transmit byte array up to 256 bytes long
-    /*
-        byte byteArr[] = {0x01, 0x23, 0x45, 0x56, 0x78, 0xAB, 0xCD, 0xEF};
-        int state = radio.transmit(byteArr, 8);
-    */
-
     if (state == RADIOLIB_ERR_NONE) {
-        Serial.println(F("Radio tramsmittion successful!"));
+        Serial.println(F("Radio transmission successful!"));
         Serial.print(F("[SX1262] Datarate:\t"));
         Serial.print(radio.getDataRate());
         Serial.println(F(" bps"));
@@ -112,22 +102,18 @@ void recvLoop() {
 
             if (state == RADIOLIB_ERR_NONE) {
                 Serial.print(F("[RADIO] Received packet!"));
-
                 Serial.print(F(" Data:"));
                 Serial.print(recv);
-
                 Serial.print(F(" RSSI:"));
                 Serial.print(radio.getRSSI());
                 Serial.print(F(" dBm"));
-                // snprintf(dispRecvicerBuff[1], sizeof(dispRecvicerBuff[1]), "RSSI:%.2f dBm", radio.getRSSI());
-
                 Serial.print(F("  SNR:"));
                 Serial.print(radio.getSNR());
                 Serial.println(F(" dB"));
-            } else if (state ==  RADIOLIB_ERR_CRC_MISMATCH) {
+            } else if (state == RADIOLIB_ERR_CRC_MISMATCH) {
                 Serial.println(F("CRC error!"));
             } else {
-                Serial.print(F("failed, code "));
+                Serial.print(F("Failed, code "));
                 Serial.println(state);
             }
         } else {
