@@ -59,3 +59,5 @@
 #define READS       20  // Number of readings for averaging
 
 #define LILYGO_KB_SLAVE_ADDRESS 0x55
+
+#define RADIO_FREQ 903.0
