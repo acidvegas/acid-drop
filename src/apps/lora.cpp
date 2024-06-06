@@ -100,3 +100,38 @@ bool transmit() {
         return false;
     }
 }
+
+
+void recvLoop() {
+    String recv;
+
+    while (true) {
+        if (radio.available()) {
+            int state = radio.readData(recv);
+
+            if (state == RADIOLIB_ERR_NONE) {
+                Serial.print(F("[RADIO] Received packet!"));
+
+                Serial.print(F(" Data:"));
+                Serial.print(recv);
+
+                Serial.print(F(" RSSI:"));
+                Serial.print(radio.getRSSI());
+                Serial.print(F(" dBm"));
+                // snprintf(dispRecvicerBuff[1], sizeof(dispRecvicerBuff[1]), "RSSI:%.2f dBm", radio.getRSSI());
+
+                Serial.print(F("  SNR:"));
+                Serial.print(radio.getSNR());
+                Serial.println(F(" dB"));
+            } else if (state ==  RADIOLIB_ERR_CRC_MISMATCH) {
+                Serial.println(F("CRC error!"));
+            } else {
+                Serial.print(F("failed, code "));
+                Serial.println(state);
+            }
+        } else {
+            Serial.println(F("Radio became unavailable!"));
+            break;
+        }
+    }
+}
