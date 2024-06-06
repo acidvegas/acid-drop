@@ -1303,6 +1303,9 @@ void parseAndDisplay(String line) {
 void handleKeyboardInput(char key) {
     lastActivityTime = millis(); // Update last activity time to reset the inactivity timer
 
+    if (!screenOn)
+        turnOnScreen();
+
     static bool altPressed = false;
 
     if (key == '\n' || key == '\r') { // Enter
