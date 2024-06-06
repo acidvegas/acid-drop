@@ -1211,6 +1211,7 @@ void handleKeyboardInput(char key) {
 
     if (!screenOn) {
         turnOnScreen();
+        screenOn = true;
         return;
     }
 
