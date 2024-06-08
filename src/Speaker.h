@@ -11,7 +11,7 @@
 #define BOARD_I2S_PORT I2S_NUM_0
 #define SAMPLE_RATE 44100
 
-void setupI2S();
-void playTone(float frequency, int duration, int volume = 16383);
-void playRTTTL(const char* rtttl);
 void playNotificationSound();
+void playRTTTL(const char* rtttl);
+void playTone(float frequency, int duration, int volume = 16383);
+void setupI2S();

@@ -4,6 +4,38 @@
 SX1262 radio = new Module(RADIO_CS_PIN, RADIO_DIO1_PIN, RADIO_RST_PIN, RADIO_BUSY_PIN);
 
 
+void recvLoop() {
+    String recv;
+
+    while (true) {
+        if (radio.available()) {
+            int state = radio.readData(recv);
+
+            if (state == RADIOLIB_ERR_NONE) {
+                playNotificationSound();
+                Serial.print(F("[RADIO] Received packet!"));
+                Serial.print(F(" Data:"));
+                Serial.print(recv);
+                Serial.print(F(" RSSI:"));
+                Serial.print(radio.getRSSI());
+                Serial.print(F(" dBm"));
+                Serial.print(F("  SNR:"));
+                Serial.print(radio.getSNR());
+                Serial.println(F(" dB"));
+            } else if (state == RADIOLIB_ERR_CRC_MISMATCH) {
+                Serial.println(F("CRC error!"));
+            } else {
+                Serial.print(F("Failed, code "));
+                Serial.println(state);
+            }
+        } else {
+            Serial.println(F("Radio became unavailable!"));
+            break;
+        }
+    }
+}
+
+
 bool setupRadio() {
     pinMode(RADIO_CS_PIN, OUTPUT);
     digitalWrite(RADIO_CS_PIN, HIGH);
@@ -89,36 +121,5 @@ bool transmit() {
         Serial.print(F("Radio error failed, code "));
         Serial.println(state);
         return false;
-    }
-}
-
-
-void recvLoop() {
-    String recv;
-
-    while (true) {
-        if (radio.available()) {
-            int state = radio.readData(recv);
-
-            if (state == RADIOLIB_ERR_NONE) {
-                Serial.print(F("[RADIO] Received packet!"));
-                Serial.print(F(" Data:"));
-                Serial.print(recv);
-                Serial.print(F(" RSSI:"));
-                Serial.print(radio.getRSSI());
-                Serial.print(F(" dBm"));
-                Serial.print(F("  SNR:"));
-                Serial.print(radio.getSNR());
-                Serial.println(F(" dB"));
-            } else if (state == RADIOLIB_ERR_CRC_MISMATCH) {
-                Serial.println(F("CRC error!"));
-            } else {
-                Serial.print(F("Failed, code "));
-                Serial.println(state);
-            }
-        } else {
-            Serial.println(F("Radio became unavailable!"));
-            break;
-        }
     }
 }

@@ -3,6 +3,7 @@
 
 Preferences preferences;
 
+// Config variables
 String irc_nickname;
 String irc_username;
 String irc_realname;
@@ -82,9 +83,9 @@ bool mountSD() {
             else
                 Serial.println("UNKNOWN");
 
-            uint32_t cardSize = SD.cardSize() / (1024 * 1024);
+            uint32_t cardSize  = SD.cardSize()   / (1024 * 1024);
             uint32_t cardTotal = SD.totalBytes() / (1024 * 1024);
-            uint32_t cardUsed = SD.usedBytes() / (1024 * 1024);
+            uint32_t cardUsed  = SD.usedBytes()  / (1024 * 1024);
             Serial.printf("SD Card Size: %lu MB\n", cardSize);
             Serial.printf("Total space: %lu MB\n",  cardTotal);
             Serial.printf("Used space: %lu MB\n",   cardUsed);

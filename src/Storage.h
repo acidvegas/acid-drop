@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Arduino.h>
-#include <Preferences.h>
 #include "nvs_flash.h"
+#include <Preferences.h>
 #include <SD.h>
 
 #include "pins.h"
@@ -13,8 +13,8 @@ extern String irc_nickname;
 extern String irc_username;
 extern String irc_realname;
 extern String irc_server;
-extern int irc_port;
-extern bool irc_tls;
+extern    int irc_port;
+extern   bool irc_tls;
 extern String irc_channel;
 extern String irc_nickserv;
 extern String wifi_ssid;
