@@ -7,6 +7,11 @@ bool          readyToJoinChannel = false;
 WiFiClient* client;
 
 
+void action(String target, String message) {
+    sendIRC("PRIVMSG " + String(target) + " :\001ACTION " + message + "\001");
+}
+
+
 bool connectToIRC() {
     if (irc_tls) {
         Serial.println("Connecting to IRC with TLS: " + String(irc_server) + ":" + String(irc_port));

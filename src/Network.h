@@ -29,6 +29,7 @@ void displayWiFiNetwork(int index, int displayIndex);
 String getEncryptionType(wifi_auth_mode_t encryptionType);
 void handlePasswordInput(char key);
 void handleWiFiSelection(char key);
+void initializeNetwork();
 void randomizeMacAddress();
 void scanWiFiNetworks();
 void updateSelectedNetwork(int delta);

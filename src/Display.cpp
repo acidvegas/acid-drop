@@ -1,21 +1,21 @@
+#include "bootScreen.h"
 #include "Display.h"
+#include "IRC.h"
+#include "pins.h"
+#include "Speaker.h"
 #include "Storage.h"
 #include "Utilities.h"
-#include "Speaker.h"
-#include "pins.h"
-#include "bootScreen.h"
-#include "IRC.h"
 
-// External variables definitions
-bool infoScreen = false;
-bool configScreen = false;
-bool screenOn = true;
-const char* channel = "#comms";
-unsigned long infoScreenStartTime = 0;
+
+bool          infoScreen            = false;
+bool          configScreen          = false;
+bool          screenOn              = true;
+const char*   channel               = "#comms";
+unsigned long infoScreenStartTime   = 0;
 unsigned long configScreenStartTime = 0;
-unsigned long lastStatusUpdateTime = 0;
-unsigned long lastActivityTime = 0;
-String inputBuffer = "";
+unsigned long lastStatusUpdateTime  = 0;
+unsigned long lastActivityTime      = 0;
+String        inputBuffer           = "";
 
 std::vector<String> lines;
 std::vector<bool> mentions;
@@ -23,11 +23,13 @@ std::map<String, uint32_t> nickColors;
 
 TFT_eSPI tft = TFT_eSPI();
 
+
 void addLine(String senderNick, String message, String type, bool mention, uint16_t errorColor, uint16_t reasonColor) {
     if (type != "error" && nickColors.find(senderNick) == nickColors.end())
         nickColors[senderNick] = generateRandomColor();
 
     String formattedMessage;
+
     if (type == "join") {
         formattedMessage = "JOIN " + senderNick + " has joined " + String(channel);
     } else if (type == "part") {
@@ -74,6 +76,7 @@ void addLine(String senderNick, String message, String type, bool mention, uint1
     displayLines();
 }
 
+
 int calculateLinesRequired(String message) {
     int linesRequired = 1;
     int lineWidth = 0;
@@ -103,12 +106,14 @@ int calculateLinesRequired(String message) {
     return linesRequired;
 }
 
+
 void displayCenteredText(String text) {
     tft.fillScreen(TFT_BLACK);
     tft.setTextDatum(MC_DATUM);
     tft.setTextColor(TFT_GREEN, TFT_BLACK);
     tft.drawString(text, SCREEN_WIDTH / 2, (SCREEN_HEIGHT + STATUS_BAR_HEIGHT) / 2);
 }
+
 
 void displayInputLine() {
     tft.fillRect(0, SCREEN_HEIGHT - INPUT_LINE_HEIGHT, SCREEN_WIDTH, INPUT_LINE_HEIGHT, TFT_BLACK);
@@ -131,6 +136,7 @@ void displayInputLine() {
     tft.print("> " + displayInput);
     tft.setTextColor(TFT_WHITE);
 }
+
 
 void displayLines() {
     tft.fillRect(0, STATUS_BAR_HEIGHT, SCREEN_WIDTH, SCREEN_HEIGHT - STATUS_BAR_HEIGHT - INPUT_LINE_HEIGHT, TFT_BLACK);
@@ -260,6 +266,7 @@ void displayLines() {
     displayInputLine();
 }
 
+
 void displayXBM() {
     tft.fillScreen(TFT_BLACK);
 
@@ -283,9 +290,11 @@ void displayXBM() {
     }
 }
 
+
 uint32_t generateRandomColor() {
     return tft.color565(random(0, 255), random(0, 255), random(0, 255));
 }
+
 
 uint16_t getColorFromCode(int colorCode) {
     switch (colorCode) {
@@ -392,12 +401,14 @@ uint16_t getColorFromCode(int colorCode) {
     }
 }
 
+
 uint16_t getColorFromPercentage(int percentage) {
     if      (percentage > 75) return TFT_GREEN;
     else if (percentage > 50) return TFT_YELLOW;
     else if (percentage > 25) return TFT_ORANGE;
     else                      return TFT_RED;
 }
+
 
 void handleKeyboardInput(char key) {
     lastActivityTime = millis();
@@ -449,6 +460,7 @@ void handleKeyboardInput(char key) {
         displayInputLine();
     }
 }
+
 
 void parseAndDisplay(String line) {
     int firstSpace = line.indexOf(' ');
@@ -517,6 +529,7 @@ void parseAndDisplay(String line) {
         }
     }
 }
+
 
 int renderFormattedMessage(String message, int cursorY, int lineHeight, bool highlightNick) {
     uint16_t fgColor = TFT_WHITE;
@@ -618,6 +631,18 @@ int renderFormattedMessage(String message, int cursorY, int lineHeight, bool hig
     return cursorY;
 }
 
+
+void setupScreen() {
+    pinMode(TFT_BL, OUTPUT);
+    digitalWrite(TFT_BL, HIGH);
+    setBrightness(8);
+    tft.begin();
+    tft.setRotation(1);
+    tft.invertDisplay(1);
+    Serial.println("TFT initialized");
+}
+
+
 void turnOffScreen() {
     Serial.println("Screen turned off");
     tft.writecommand(TFT_DISPOFF);
@@ -626,6 +651,7 @@ void turnOffScreen() {
     screenOn = false;
 }
 
+
 void turnOnScreen() {
     Serial.println("Screen turned on");
     digitalWrite(TFT_BL, HIGH);
@@ -633,6 +659,7 @@ void turnOnScreen() {
     tft.writecommand(TFT_DISPON);
     screenOn = true;
 }
+
 
 void updateStatusBar() {
     Serial.println("Updating status bar...");

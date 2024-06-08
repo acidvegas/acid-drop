@@ -2,39 +2,39 @@
 #include <time.h>
 
 // Local includes
-#include "bootScreen.h"
-#include "Lora.h"
-#include "pins.h"
-#include "Storage.h"
-#include "Speaker.h"
-#include "Utilities.h"
 #include "Display.h"
-#include "Network.h"
 #include "IRC.h"
+#include "Lora.h"
+#include "Network.h"
+#include "pins.h"
+#include "Speaker.h"
+#include "Storage.h"
+#include "Utilities.h"
 
 // Timing constants
 const unsigned long STATUS_UPDATE_INTERVAL = 15000; // 15 seconds
-const unsigned long INACTIVITY_TIMEOUT = 30000;     // 30 seconds
+const unsigned long INACTIVITY_TIMEOUT     = 30000; // 30 seconds
 
 
 // Main functions ---------------------------------------------------------------------------------
 void setup() {
     // Initialize serial communication
     Serial.begin(115200);
-
-    // Wait for the serial monitor to open
-    //while (!Serial);
-
     Serial.println("Booting device...");
 
     // Give power to the board peripherals
     pinMode(BOARD_POWERON, OUTPUT); 
     digitalWrite(BOARD_POWERON, HIGH);
 
-    // Give power to the screen
-    pinMode(TFT_BL, OUTPUT);
-    digitalWrite(TFT_BL, HIGH);
-    setBrightness(8); // Set the screen brightness to 50%)
+    // Start the I2C bus for the keyboard
+    Wire.begin(BOARD_I2C_SDA, BOARD_I2C_SCL);
+
+    // Initialize the display
+    setupScreen();
+    displayXBM();
+
+    // Load preferences from storage
+    loadPreferences();
 
     // Give power to the SD card
     //setupSD();
@@ -42,32 +42,15 @@ void setup() {
     
     // Turn on power to the radio
     //setupRadio();
-    
-    // Start the I2C bus for the keyboard
-    Wire.begin(BOARD_I2C_SDA, BOARD_I2C_SCL);
 
-    // Initialize the screen
-    tft.begin();
-    tft.setRotation(1);
-    tft.invertDisplay(1);
-    Serial.println("TFT initialized");
-
-    // Display the boot screen
-    displayXBM();
-    
-    // Initialize the preferences
-    loadPreferences();
+    // Setup the WiFi
+    initializeNetwork();
 
     // Initialize the speaker
     setupI2S(); // Do we want to keep this open or uninstall after each use to keep resources free?
     const char* rtttl_boot = "TakeOnMe:d=4,o=4,b=500:8f#5,8f#5,8f#5,8d5,8p,8b,8p,8e5,8p,8e5,8p,8e5,8g#5,8g#5,8a5,8b5,8a5,8a5,8a5,8e5,8p,8d5,8p,8f#5,8p,8f#5,8p,8f#5,8e5,8e5,8f#5,8e5,8f#5,8f#5,8f#5,8d5,8p,8b,8p,8e5,8p,8e5,8p,8e5,8g#5,8g#5,8a5,8b5,8a5,8a5,8a5,8e5,8p,8d5,8p,8f#5,8p,8f#5,8p,8f#5,8e5,8e5";
     playRTTTL(rtttl_boot);
 
-    // Setup the WiFi
-    WiFi.mode(WIFI_STA);
-    WiFi.setHostname("acid-drop"); // Turn into a preference
-    WiFi.onEvent(WiFiEvent);
-    randomizeMacAddress();
 
     // Connect to WiFi if credentials are stored, otherwise scan for networks
     if (wifi_ssid.length() > 0 && wifi_password.length() > 0) {
