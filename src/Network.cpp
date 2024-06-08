@@ -8,6 +8,7 @@ WireGuard wg;
 
 
 void connectToWiFi(String ssid, String password) {
+    wifiNetworks.clear();
     Serial.println("Connecting to WiFi network: " + ssid);
     WiFi.begin(ssid.c_str(), password.c_str());
 
@@ -167,6 +168,14 @@ void handleWiFiSelection(char key) {
 }
 
 
+void initializeNetwork() {
+    WiFi.mode(WIFI_STA);
+    WiFi.setHostname("acid-drop"); // Turn into a preference
+    WiFi.onEvent(WiFiEvent);
+    randomizeMacAddress();
+}
+
+
 void randomizeMacAddress() {
     Serial.println("Current MAC Address: " + WiFi.macAddress());
 
@@ -178,7 +187,7 @@ void randomizeMacAddress() {
     if (esp_wifi_set_mac(WIFI_IF_STA, new_mac) == ESP_OK)
         Serial.println("New MAC Address: " + WiFi.macAddress());
     else
-        Serial.print("Failed to set new MAC Address");
+        Serial.println("Failed to set new MAC Address");
 }
 
 
@@ -186,6 +195,8 @@ void scanWiFiNetworks() {
     Serial.println("Scanning for WiFi networks...");
     displayCenteredText("SCANNING WIFI");
     delay(1000);
+
+    wifiNetworks.clear();
 
     int n = WiFi.scanNetworks();
 
