@@ -7,6 +7,8 @@ This is a custom firmware being developed for the [LilyGo T-Deck](https://www.li
 
 If you are familiar with or use [Internet Relay Chat](https://en.wikipedia.org/wiki/IRC), we have a team of developers working on this project in **#comms** on **[irc.supernets.org](irc://irc.supernets.org)**, join us if you have ideas, bugs, or want to get your hands dirty & develope this project with us.
 
+Consider sponsoring our project, all the money goes towards motivation to develope on this, we also like buying T-Decks for people who want to learn about this stuff!
+
 ![](./.screens/preview.png)
 
 # Flashing the Firmware
