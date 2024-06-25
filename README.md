@@ -11,6 +11,8 @@ Consider sponsoring our project, all the money goes towards motivation to develo
 
 ![](./.screens/preview.png)
 
+![](./.screens/lvgl.png)
+
 # Flashing the Firmware
 ###### Using VS Code
 1. Add your user to the `dialout` group: `sudo gpasswd -a YOURUSERNAME dialout` *(You will need to re-login after adding your user to the `dialout` group for it to take affect)*
@@ -62,6 +64,7 @@ The device will scan for WiFi networks on boot. Once the list is displayed, you 
 - [ ] SD card support
 
 ###### Features
+- [X] LVGL used for enhanced UI
 - [X] Wifi scanning & selection menu
   - [x] Saved wifi profiles
 - [ ] Wifi Hotspot
@@ -73,6 +76,7 @@ The device will scan for WiFi networks on boot. Once the list is displayed, you 
 - [X] Serial debug logs
 
 ###### Applications
+- [ ] Rubber Ducky
 - [X] IRC Client
   - [X] `/raw` command for IRC client to send raw data to the server
   - [ ] Add scrolling backlog for IRC to see the last 200 messages
@@ -92,6 +96,9 @@ The device will scan for WiFi networks on boot. Once the list is displayed, you 
 - [ ] Meshtastic *(in progress)*
 - [ ] Spotify/Music player *(can we play audio throuigh Bluetoth headphones or the on-board speaker?)*
 - [ ] Syslog *(All serial logs will be displayed here for on-device debugging)*
+
+# Ideas
+- Replace the `ESP32-S3FN16R8` with a `ESP32-S3-WROOM-1U` which has an iPex connector for an external WiFi antenna.
 
 # Previews
 ###### 99 Color support
