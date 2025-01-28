@@ -10,7 +10,7 @@
 bool          infoScreen            = false;
 bool          configScreen          = false;
 bool          screenOn              = true;
-const char*   channel               = "#comms";
+const char*   channel               = "#superbowl";
 unsigned long infoScreenStartTime   = 0;
 unsigned long configScreenStartTime = 0;
 unsigned long lastStatusUpdateTime  = 0;
