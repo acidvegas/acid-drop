@@ -45,7 +45,7 @@ void loadPreferences() {
     irc_tls = preferences.getBool("irc_tls");
 
     if (!preferences.isKey("irc_channel"))
-        preferences.putString("irc_channel", "#superb1owl");
+        preferences.putString("irc_channel", "#superbowl");
     irc_channel = preferences.getString("irc_channel");
 
     if (!preferences.isKey("irc_nickserv"))
