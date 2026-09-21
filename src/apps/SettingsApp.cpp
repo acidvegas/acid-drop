@@ -320,27 +320,37 @@ void addShortcutRow(const char* label, const char* help, void (*onClick)()) {
     }, LV_EVENT_CLICKED, reinterpret_cast<void*>(onClick));
 }
 
-void makeHeader(const String& title, bool withBack) {
+// `intoSection` distinguishes the two screens: inside a section the back
+// button returns to the section list, at the root it leaves the app. There is
+// always one, because the root having no way out but an undiscoverable
+// trackball hold is how people get stranded in here.
+void makeHeader(const String& title, bool intoSection) {
     lv_obj_clean(s_header);
 
-    if (withBack) {
-        lv_obj_t* back = lv_button_create(s_header);
-        lv_obj_set_size(back, 34, 24);
-        lv_obj_set_style_bg_color(back, lv_color_hex(theme::kSurfaceAlt), 0);
-        lv_obj_set_style_radius(back, 5, 0);
-        lv_obj_align(back, LV_ALIGN_LEFT_MID, 0, 0);
-        lv_obj_t* label = lv_label_create(back);
-        lv_label_set_text(label, LV_SYMBOL_LEFT);
-        lv_obj_center(label);
-        lv_obj_add_event_cb(back, [](lv_event_t*) { showSections(); }, LV_EVENT_CLICKED, nullptr);
-        lv_group_add_obj(input::group(), back);
+    lv_obj_t* back = lv_button_create(s_header);
+    lv_obj_set_size(back, 36, 26);
+    lv_obj_set_style_bg_color(back, lv_color_hex(theme::kSurfaceAlt), 0);
+    lv_obj_set_style_radius(back, 5, 0);
+    lv_obj_align(back, LV_ALIGN_LEFT_MID, 0, 0);
+
+    lv_obj_t* label = lv_label_create(back);
+    lv_label_set_text(label, LV_SYMBOL_LEFT);
+    lv_obj_center(label);
+    lv_group_add_obj(input::group(), back);
+
+    if (intoSection) {
+        lv_obj_add_event_cb(back, [](lv_event_t*) { showSections(); },
+                            LV_EVENT_CLICKED, nullptr);
+    } else {
+        lv_obj_add_event_cb(back, [](lv_event_t*) { ui::back(); },
+                            LV_EVENT_CLICKED, nullptr);
     }
 
     lv_obj_t* title_label = lv_label_create(s_header);
     lv_label_set_text(title_label, title.c_str());
     lv_obj_set_style_text_font(title_label, theme::uiFont(), 0);
     lv_obj_set_style_text_color(title_label, theme::accent(), 0);
-    lv_obj_align(title_label, LV_ALIGN_LEFT_MID, withBack ? 42 : 0, 0);
+    lv_obj_align(title_label, LV_ALIGN_LEFT_MID, 44, 0);
 }
 
 void showSections() {
