@@ -27,11 +27,15 @@ lv_obj_t* s_header  = nullptr;
 lv_obj_t* s_list    = nullptr;
 lv_obj_t* s_editor  = nullptr;
 
-String s_section;          // empty while the section list is showing
+String      s_section;                       // empty while showing the section list
+const char* s_group   = settings::kGroupSystem;
 const SettingDef* s_editing = nullptr;
 
 void showSections();
 void showSection(const String& section);
+
+// A row that opens another screen rather than editing a value.
+void addShortcutRow(const char* label, const char* help, void (*onClick)());
 
 // --- applying a change ----------------------------------------------------
 // Settings are only useful if changing them does something immediately.
@@ -286,6 +290,36 @@ void sectionEventCb(lv_event_t* event) {
     showSection(String(section));
 }
 
+void addShortcutRow(const char* label, const char* help, void (*onClick)()) {
+    lv_obj_t* row = lv_obj_create(s_list);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, LV_PCT(100), LV_SIZE_CONTENT);
+    theme::styleRow(row);
+    lv_obj_set_style_bg_color(row, lv_color_hex(theme::kAccentDim), 0);
+    lv_obj_set_clickable(row, true);
+    lv_obj_set_scrollable(row, false);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(row, 1, 0);
+    lv_group_add_obj(input::group(), row);
+
+    lv_obj_t* title = lv_label_create(row);
+    lv_label_set_text(title, label);
+    lv_obj_set_style_text_font(title, theme::uiFont(), 0);
+
+    if (help) {
+        lv_obj_t* hint = lv_label_create(row);
+        lv_label_set_text(hint, help);
+        lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
+        lv_obj_set_width(hint, LV_PCT(100));
+        lv_obj_set_style_text_font(hint, theme::uiFontSmall(), 0);
+        lv_obj_set_style_text_color(hint, theme::textDim(), 0);
+    }
+
+    lv_obj_add_event_cb(row, [](lv_event_t* event) {
+        reinterpret_cast<void(*)()>(lv_event_get_user_data(event))();
+    }, LV_EVENT_CLICKED, reinterpret_cast<void*>(onClick));
+}
+
 void makeHeader(const String& title, bool withBack) {
     lv_obj_clean(s_header);
 
@@ -311,11 +345,20 @@ void makeHeader(const String& title, bool withBack) {
 
 void showSections() {
     s_section = "";
-    makeHeader("Settings", false);
+    const bool irc = strcmp(s_group, settings::kGroupIrc) == 0;
+    makeHeader(irc ? "IRC settings" : "Settings", false);
 
     lv_obj_clean(s_list);
 
-    for (const char* section : settings::sections()) {
+    // A couple of things are not single values, so they get their own screens
+    // rather than a row in the generic list.
+    if (irc) {
+        addShortcutRow(LV_SYMBOL_LIST "  Channels",
+                       "Auto-join list, keys and per-channel retry",
+                       [] { ui::openApp(ui::AppId::Channels); });
+    }
+
+    for (const char* section : settings::sections(s_group)) {
         lv_obj_t* row = lv_obj_create(s_list);
         lv_obj_remove_style_all(row);
         lv_obj_set_size(row, LV_PCT(100), LV_SIZE_CONTENT);
@@ -338,6 +381,8 @@ void showSections() {
     }
 
     // A reset row at the bottom, because a settings screen this large needs one.
+    if (irc) return;
+
     lv_obj_t* reset = lv_obj_create(s_list);
     lv_obj_remove_style_all(reset);
     lv_obj_set_size(reset, LV_PCT(100), LV_SIZE_CONTENT);
@@ -378,6 +423,13 @@ void showSection(const String& section) {
     makeHeader(section, true);
 
     lv_obj_clean(s_list);
+
+    // Typing an SSID by hand is miserable, so offer the scanner right here.
+    if (section == "WiFi") {
+        addShortcutRow(LV_SYMBOL_REFRESH "  Scan for networks",
+                       "Pick a network instead of typing its name",
+                       [] { ui::openApp(ui::AppId::Wifi); });
+    }
 
     for (const SettingDef& def : settings::defs()) {
         if (section != def.section) continue;
@@ -441,6 +493,11 @@ bool keyHook(uint32_t key) {
 
 } // namespace
 
+void createIrc(lv_obj_t* parent) {
+    s_group = settings::kGroupIrc;
+    create(parent);
+}
+
 void create(lv_obj_t* parent) {
     s_page = lv_obj_create(parent);
     lv_obj_remove_style_all(s_page);
@@ -471,10 +528,11 @@ void create(lv_obj_t* parent) {
 void destroy() {
     closeEditor();
     input::clearKeyHook();
-    s_page   = nullptr;
-    s_header = nullptr;
-    s_list   = nullptr;
+    s_page    = nullptr;
+    s_header  = nullptr;
+    s_list    = nullptr;
     s_section = "";
+    s_group   = settings::kGroupSystem;   // the IRC entry point re-arms it
 }
 
 void tick() {}

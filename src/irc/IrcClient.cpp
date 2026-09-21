@@ -6,6 +6,7 @@
 
 #include "core/Log.h"
 #include "core/Settings.h"
+#include "irc/ChannelList.h"
 
 namespace {
 
@@ -735,7 +736,7 @@ void IrcClient::handleKick(const IrcMessage& message) {
                 " by " + message.nick + (reason.isEmpty() ? String() : " (" + reason + ")"),
                 LINE_KICK, true);
 
-        if (m_cfg.rejoinOnKick) {
+        if (m_cfg.rejoinOnKick && channel.retryEnabled) {
             channel.retryAt     = millis() + m_cfg.kickDelayS * 1000UL;
             channel.retryCount  = 0;
             channel.retryReason = "kicked";
@@ -852,21 +853,18 @@ void IrcClient::handleTopic(const IrcMessage& message) {
 // --- joining --------------------------------------------------------------
 
 void IrcClient::queueConfiguredChannels() {
-    const std::vector<String> channels = irc::splitList(settings::getText("irc_chans"));
+    for (const IrcChannelConfig& saved : channels::all()) {
+        if (!saved.autojoin) continue;
 
-    for (const String& entry : channels) {
-        // "#channel key" is accepted so keyed channels can be configured.
-        const int space = entry.indexOf(' ');
-        const String name = space < 0 ? entry : entry.substring(0, space);
-        const String key  = space < 0 ? String() : entry.substring(space + 1);
-
-        IrcBuffer& channel = ensureBuffer(name, BufferKind::Channel);
-        channel.key = key;
-        channel.retryAt = millis();     // join on the next pump
-        channel.retryCount = 0;
+        IrcBuffer& channel = ensureBuffer(saved.name, BufferKind::Channel);
+        channel.key          = saved.key;
+        channel.retryEnabled = saved.retry;
+        channel.retryAt      = millis();   // join on the next pump
+        channel.retryCount   = 0;
     }
 
-    // Anything we were in before the drop gets rejoined too.
+    // Anything we were in before the drop gets rejoined too, whether or not it
+    // is on the autojoin list - losing the link should not lose your windows.
     for (auto& buffer : m_buffers) {
         if (buffer->isChannel() && !buffer->joined && buffer->retryAt == 0) {
             buffer->retryAt = millis();
@@ -901,7 +899,7 @@ void IrcClient::processJoinQueue() {
         // If the join fails we will hear about it as a numeric and reschedule.
         // If it succeeds, JOIN clears the retry state. Either way, arm a
         // fallback so a server that answers with neither does not strand us.
-        if (m_cfg.retryFailedJoins) {
+        if (m_cfg.retryFailedJoins && buffer->retryEnabled) {
             buffer->retryAt = now + m_cfg.lockDelayS * 1000UL * 4;
         }
         return;   // one JOIN per pump, to stay under flood limits
@@ -909,7 +907,7 @@ void IrcClient::processJoinQueue() {
 }
 
 void IrcClient::scheduleJoinRetry(IrcBuffer& target, const String& reason) {
-    if (!m_cfg.retryFailedJoins) {
+    if (!m_cfg.retryFailedJoins || !target.retryEnabled) {
         addLine(target, ctrlColor(4) + "!!" + RESET + " Cannot join " + target.name +
                         " (" + reason + ")", LINE_ERROR);
         target.retryAt = 0;
@@ -975,6 +973,13 @@ void IrcClient::join(const String& channel, const String& key) {
     buffer.key        = key;
     buffer.retryAt    = millis();
     buffer.retryCount = 0;
+
+    // A channel you joined by hand should survive a reconnect, so remember it.
+    channels::rememberJoin(channel, key);
+    if (const IrcChannelConfig* saved = channels::find(channel)) {
+        buffer.retryEnabled = saved->retry;
+    }
+
     if (onBufferListChanged) onBufferListChanged();
 }
 
@@ -984,6 +989,11 @@ void IrcClient::part(const String& channel, const String& reason) {
         // An explicit part means stop trying to get back in.
         buffer->retryAt     = 0;
         buffer->retryReason = "";
+    }
+    // Parting is a deliberate act, so stop auto-joining it next time too.
+    if (IrcChannelConfig* saved = channels::find(channel)) {
+        saved->autojoin = false;
+        channels::save();
     }
     sendRaw("PART " + channel + (reason.isEmpty() ? String() : " :" + reason));
 }

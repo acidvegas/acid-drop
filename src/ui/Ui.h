@@ -15,8 +15,11 @@ namespace ui {
 enum class AppId : uint8_t {
     Launcher,
     Irc,
-    Settings,
+    IrcSettings,   // the IRC app's own settings, scoped to the "irc" group
+    Channels,      // saved channel list editor
+    Settings,      // everything that is not IRC
     Wifi,
+    Gps,
     Syslog,
     About,
 };
@@ -25,7 +28,10 @@ void begin();
 void loop();
 
 void  openApp(AppId id);
-void  back();                 // to the launcher, or out of a settings section
+
+// Returns to whatever opened the current app, falling back to the launcher.
+// Apps get first refusal so they can close a sub-screen instead.
+void  back();
 AppId currentApp();
 
 lv_obj_t* content();          // the container apps build into

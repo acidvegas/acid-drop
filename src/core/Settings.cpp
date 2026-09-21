@@ -50,7 +50,7 @@ const std::vector<SettingDef> kDefs = {
     DEF_BOOL("dst",         "Device",  "Daylight saving",  "Adds one hour while in effect", 1),
     DEF_BOOL("ntp_enable",  "Device",  "Sync clock (NTP)", "Requires WiFi", 1),
     DEF_TEXT("ntp_server",  "Device",  "NTP server",       nullptr, "pool.ntp.org"),
-    DEF_ENUM("boot_app",    "Device",  "Start in",         "Which screen to show after boot", kOptBootApp, 1),
+    DEF_ENUM("boot_app",    "Device",  "Start in",         "Which screen to show after boot", kOptBootApp, 0),
 
     // --- Display ---------------------------------------------------------
     DEF_INT("brightness",  "Display", "Brightness",       nullptr, 5, 255, 5, nullptr, 200),
@@ -97,7 +97,6 @@ const std::vector<SettingDef> kDefs = {
     DEF_TEXT("irc_altnick", "IRC",     "Alternate nick",   "Used if the first one is taken", ""),
     DEF_TEXT("irc_user",    "IRC",     "Username",         nullptr, "tdeck"),
     DEF_TEXT("irc_real",    "IRC",     "Real name",        nullptr, "ACID DROP"),
-    DEF_TEXT("irc_chans",   "IRC",     "Channels",         "Comma separated, joined in order", "#superbowl"),
     DEF_TEXT("irc_quitmsg", "IRC",     "Quit message",     nullptr, "ACID DROP"),
 
     // --- IRC auth --------------------------------------------------------
@@ -240,9 +239,17 @@ const SettingDef* find(const char* key) {
     return nullptr;
 }
 
-std::vector<const char*> sections() {
+const char* groupOf(const char* section) {
+    // Every IRC section is named "IRC...", so one prefix test keeps the
+    // registry free of an extra column on all ninety rows.
+    return strncmp(section, "IRC", 3) == 0 ? kGroupIrc : kGroupSystem;
+}
+
+std::vector<const char*> sections(const char* group) {
     std::vector<const char*> out;
     for (const auto& def : kDefs) {
+        if (group != nullptr && strcmp(groupOf(def.section), group) != 0) continue;
+
         bool seen = false;
         for (const char* s : out) {
             if (strcmp(s, def.section) == 0) { seen = true; break; }

@@ -1,6 +1,8 @@
 #include "ui/Ui.h"
 
 #include "apps/AboutApp.h"
+#include "apps/ChannelsApp.h"
+#include "apps/GpsApp.h"
 #include "apps/IrcApp.h"
 #include "apps/Launcher.h"
 #include "apps/SettingsApp.h"
@@ -11,6 +13,7 @@
 #include "board/Power.h"
 #include "core/Log.h"
 #include "core/Settings.h"
+#include "irc/ChannelList.h"
 #include "irc/IrcClient.h"
 #include "ui/Shade.h"
 #include "ui/StatusBar.h"
@@ -26,8 +29,9 @@ lv_obj_t* s_content = nullptr;
 lv_obj_t* s_toast   = nullptr;
 uint32_t  s_toastUntil = 0;
 
-AppId     s_current = AppId::Launcher;
-IrcClient s_irc;
+AppId              s_current = AppId::Launcher;
+std::vector<AppId> s_stack;          // where back() goes, most recent last
+IrcClient          s_irc;
 
 struct AppHooks {
     void (*create)(lv_obj_t*);
@@ -37,13 +41,16 @@ struct AppHooks {
 
 AppHooks hooksFor(AppId id) {
     switch (id) {
-        case AppId::Irc:      return {ircapp::create,      ircapp::destroy,      ircapp::tick};
-        case AppId::Settings: return {settingsapp::create, settingsapp::destroy, settingsapp::tick};
-        case AppId::Wifi:     return {wifiapp::create,     wifiapp::destroy,     wifiapp::tick};
-        case AppId::Syslog:   return {syslogapp::create,   syslogapp::destroy,   syslogapp::tick};
-        case AppId::About:    return {aboutapp::create,    aboutapp::destroy,    aboutapp::tick};
+        case AppId::Irc:         return {ircapp::create,       ircapp::destroy,      ircapp::tick};
+        case AppId::IrcSettings: return {settingsapp::createIrc, settingsapp::destroy, settingsapp::tick};
+        case AppId::Channels:    return {channelsapp::create,  channelsapp::destroy, channelsapp::tick};
+        case AppId::Settings:    return {settingsapp::create,  settingsapp::destroy, settingsapp::tick};
+        case AppId::Wifi:        return {wifiapp::create,      wifiapp::destroy,     wifiapp::tick};
+        case AppId::Gps:         return {gpsapp::create,       gpsapp::destroy,      gpsapp::tick};
+        case AppId::Syslog:      return {syslogapp::create,    syslogapp::destroy,   syslogapp::tick};
+        case AppId::About:       return {aboutapp::create,     aboutapp::destroy,    aboutapp::tick};
         case AppId::Launcher:
-        default:              return {launcher::create,    launcher::destroy,    launcher::tick};
+        default:                 return {launcher::create,     launcher::destroy,    launcher::tick};
     }
 }
 
@@ -94,6 +101,7 @@ void begin() {
 
     shade::create();
 
+    channels::begin();
     s_irc.begin();
     wireIrcCallbacks();
 
@@ -125,6 +133,15 @@ void loop() {
 }
 
 void openApp(AppId id) {
+    if (id == s_current) return;
+
+    // Remember where we came from, but never let the trail grow without bound
+    // and never record the launcher, which is the floor of the stack anyway.
+    if (s_current != AppId::Launcher) {
+        s_stack.push_back(s_current);
+        if (s_stack.size() > 4) s_stack.erase(s_stack.begin());
+    }
+
     hooksFor(s_current).destroy();
     lv_obj_clean(s_content);
 
@@ -135,9 +152,26 @@ void openApp(AppId id) {
 }
 
 void back() {
-    if (s_current == AppId::Settings && settingsapp::handleBack()) return;
+    // The app may own a sub-screen it would rather close first.
+    if ((s_current == AppId::Settings || s_current == AppId::IrcSettings) &&
+        settingsapp::handleBack()) {
+        return;
+    }
+    if (s_current == AppId::Channels && channelsapp::handleBack()) return;
     if (s_current == AppId::Launcher) return;
-    openApp(AppId::Launcher);
+
+    AppId destination = AppId::Launcher;
+    if (!s_stack.empty()) {
+        destination = s_stack.back();
+        s_stack.pop_back();
+    }
+
+    // openApp would push the app we are leaving straight back on, so step
+    // around it: this is a pop, not a new navigation.
+    hooksFor(s_current).destroy();
+    lv_obj_clean(s_content);
+    s_current = destination;
+    hooksFor(destination).create(s_content);
 }
 
 AppId currentApp() { return s_current; }
