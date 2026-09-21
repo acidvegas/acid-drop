@@ -15,6 +15,7 @@
 #include "core/Settings.h"
 #include "irc/ChannelList.h"
 #include "irc/IrcClient.h"
+#include "net/WifiService.h"
 #include "ui/StatusBar.h"
 #include "ui/Theme.h"
 
@@ -52,6 +53,19 @@ AppHooks hooksFor(AppId id) {
         case AppId::Launcher:
         default:                 return {launcher::create,     launcher::destroy,    launcher::tick};
     }
+}
+
+void wireNetworkCallbacks() {
+    net::onConnectionChanged = [](bool connected) {
+        if (!connected) return;
+        if (!settings::getBool("irc_autoconn")) return;
+
+        // Fresh network, fresh start: clear whatever backoff had built up.
+        if (s_irc.state() == IrcState::Offline || s_irc.state() == IrcState::Reconnecting) {
+            LOG_I(TAG, "network up, connecting to IRC");
+            s_irc.connect();
+        }
+    };
 }
 
 void wireIrcCallbacks() {
@@ -106,6 +120,7 @@ void begin() {
     LOG_I(TAG, "ui: irc");
     s_irc.begin();
     wireIrcCallbacks();
+    wireNetworkCallbacks();
 
     // Where to land after boot.
     const uint8_t bootApp = settings::getEnum("boot_app");
