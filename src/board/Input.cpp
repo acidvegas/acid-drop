@@ -17,6 +17,7 @@ lv_group_t* s_group   = nullptr;
 
 KeyHook  s_hook;
 uint32_t s_lastActivity = 0;
+uint32_t s_readyAt      = 0;   // ignore input until the pins have settled
 uint8_t  s_ballDivisor  = 2;
 
 // --- key queue ------------------------------------------------------------
@@ -189,15 +190,23 @@ void begin() {
     }
     pinMode(BOARD_TRACKBALL_CLICK, INPUT_PULLUP);
 
+    // The click line is GPIO0, which is also the boot strapping pin. Give the
+    // pull-up time to win before anything reads it as a press.
+    s_readyAt      = millis() + 400;
     s_lastActivity = millis();
     LOG_I(TAG, "touch, trackball and keyboard registered");
 }
 
 void loop() {
     static uint32_t lastKeyboardPoll = 0;
-    static bool     lastClick        = false;
 
     const uint32_t now = millis();
+    if (static_cast<int32_t>(now - s_readyAt) < 0) return;
+
+    // Seeded from the pin rather than from false, so a line that is already low
+    // when we start up is not mistaken for a fresh press. Getting this wrong
+    // fires an ENTER into whatever has focus the moment the UI appears.
+    static bool lastClick = digitalRead(BOARD_TRACKBALL_CLICK) == LOW;
 
     // 20ms is faster than anyone types and slow enough to stay off the I2C bus.
     if (now - lastKeyboardPoll >= 20) {

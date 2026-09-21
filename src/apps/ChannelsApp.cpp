@@ -278,27 +278,7 @@ void create(lv_obj_t* parent) {
     lv_obj_set_style_pad_row(s_page, 6, 0);
     lv_obj_set_scrollable(s_page, false);
 
-    lv_obj_t* header = lv_obj_create(s_page);
-    lv_obj_remove_style_all(header);
-    lv_obj_set_size(header, LV_PCT(100), 26);
-    lv_obj_set_scrollable(header, false);
-
-    lv_obj_t* back = lv_button_create(header);
-    lv_obj_set_size(back, 34, 24);
-    lv_obj_set_style_bg_color(back, lv_color_hex(theme::kSurfaceAlt), 0);
-    lv_obj_set_style_radius(back, 5, 0);
-    lv_obj_align(back, LV_ALIGN_LEFT_MID, 0, 0);
-    lv_obj_t* backLabel = lv_label_create(back);
-    lv_label_set_text(backLabel, LV_SYMBOL_LEFT);
-    lv_obj_center(backLabel);
-    lv_obj_add_event_cb(back, [](lv_event_t*) { ui::back(); }, LV_EVENT_CLICKED, nullptr);
-    lv_group_add_obj(input::group(), back);
-
-    lv_obj_t* title = lv_label_create(header);
-    lv_label_set_text(title, "Channels");
-    lv_obj_set_style_text_font(title, theme::uiFont(), 0);
-    lv_obj_set_style_text_color(title, theme::accent(), 0);
-    lv_obj_align(title, LV_ALIGN_LEFT_MID, 42, 0);
+    ui::createAppHeader(s_page, "Channels");
 
     s_list = lv_obj_create(s_page);
     lv_obj_remove_style_all(s_list);

@@ -54,10 +54,7 @@ void create(lv_obj_t* parent) {
     lv_obj_set_scroll_dir(s_page, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(s_page, LV_SCROLLBAR_MODE_AUTO);
 
-    lv_obj_t* title = lv_label_create(s_page);
-    lv_label_set_text(title, "ACID DROP");
-    lv_obj_set_style_text_font(title, theme::uiFontLarge(), 0);
-    lv_obj_set_style_text_color(title, theme::accent(), 0);
+    ui::createAppHeader(s_page, "ACID DROP");
 
     s_body = lv_label_create(s_page);
     lv_obj_set_width(s_body, LV_PCT(100));

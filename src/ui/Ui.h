@@ -37,6 +37,14 @@ AppId currentApp();
 lv_obj_t* content();          // the container apps build into
 int32_t   contentHeight();
 
+// The standard header every app puts at the top: a back button wired to
+// back(), then the title. The T-Deck keyboard has no escape key, so this
+// button is the only way out of an app for most people.
+lv_obj_t* createAppHeader(lv_obj_t* parent, const char* title);
+
+// Goes straight to the launcher, whatever the back stack says.
+void home();
+
 // Shared services the apps reach for.
 IrcClient& irc();
 void       reconnectIrc();

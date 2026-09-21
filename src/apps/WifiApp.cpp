@@ -163,17 +163,14 @@ void create(lv_obj_t* parent) {
     lv_obj_set_style_pad_row(s_page, 6, 0);
     lv_obj_set_scrollable(s_page, false);
 
-    lv_obj_t* header = lv_obj_create(s_page);
-    lv_obj_remove_style_all(header);
-    lv_obj_set_size(header, LV_PCT(100), 28);
-    lv_obj_set_scrollable(header, false);
+    lv_obj_t* header = ui::createAppHeader(s_page, "WiFi");
 
     s_status = lv_label_create(header);
     lv_obj_set_style_text_font(s_status, theme::uiFontSmall(), 0);
     lv_obj_set_style_text_color(s_status, theme::textDim(), 0);
     lv_label_set_long_mode(s_status, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(s_status, 230);
-    lv_obj_align(s_status, LV_ALIGN_LEFT_MID, 0, 0);
+    lv_obj_set_width(s_status, 120);
+    lv_obj_align(s_status, LV_ALIGN_LEFT_MID, 96, 0);
 
     lv_obj_t* scan = lv_button_create(header);
     lv_obj_set_size(scan, 70, 24);
