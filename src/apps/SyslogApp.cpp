@@ -45,7 +45,17 @@ void create(lv_obj_t* parent) {
     lv_obj_remove_style_all(s_page);
     lv_obj_set_size(s_page, LV_PCT(100), LV_PCT(100));
     lv_obj_set_style_pad_all(s_page, 2, 0);
+    lv_obj_set_flex_flow(s_page, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(s_page, 2, 0);
     lv_obj_set_scrollable(s_page, false);
+
+    ui::createAppHeader(s_page, "Syslog");
+
+    lv_obj_t* viewHost = lv_obj_create(s_page);
+    lv_obj_remove_style_all(viewHost);
+    lv_obj_set_width(viewHost, LV_PCT(100));
+    lv_obj_set_flex_grow(viewHost, 1);
+    lv_obj_set_scrollable(viewHost, false);
 
     s_doc.clear();
     s_doc.setMaxLines(300);
@@ -55,7 +65,7 @@ void create(lv_obj_t* parent) {
     options.defaultFg = theme::text();
     options.defaultBg = lv_color_hex(theme::kBackground);
 
-    s_view.create(s_page);
+    s_view.create(viewHost);
     s_view.setFont(&acid_mono_10);
     s_view.setTimestampMode(0);
     s_view.setFormatOptions(options);

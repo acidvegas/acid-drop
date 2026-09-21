@@ -29,10 +29,7 @@ void create(lv_obj_t* parent) {
     lv_obj_set_style_pad_row(s_page, 8, 0);
     lv_obj_set_scrollable(s_page, false);
 
-    lv_obj_t* title = lv_label_create(s_page);
-    lv_label_set_text(title, "GPS");
-    lv_obj_set_style_text_font(title, theme::uiFontLarge(), 0);
-    lv_obj_set_style_text_color(title, theme::accent(), 0);
+    ui::createAppHeader(s_page, "GPS");
 
     s_body = lv_label_create(s_page);
     lv_obj_set_width(s_body, LV_PCT(100));

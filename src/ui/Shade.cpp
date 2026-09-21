@@ -268,14 +268,15 @@ void create() {
         void (*run)();
     };
     static const Action kActions[] = {
-        {LV_SYMBOL_SETTINGS " Settings", [] { close(); ui::openApp(ui::AppId::Settings); }},
-        {LV_SYMBOL_REFRESH  " Reconnect", [] { close(); ui::reconnectIrc(); }},
-        {LV_SYMBOL_POWER    " Screen",    [] { close(); display::sleep(); }},
+        {LV_SYMBOL_HOME,     [] { close(); ui::home(); }},
+        {LV_SYMBOL_SETTINGS, [] { close(); ui::openApp(ui::AppId::Settings); }},
+        {LV_SYMBOL_REFRESH,  [] { close(); ui::reconnectIrc(); }},
+        {LV_SYMBOL_POWER,    [] { close(); display::sleep(); }},
     };
 
     for (const Action& action : kActions) {
         lv_obj_t* button = lv_button_create(actions);
-        lv_obj_set_height(button, 28);
+        lv_obj_set_size(button, 66, 28);
         lv_obj_set_style_bg_color(button, lv_color_hex(theme::kSurfaceAlt), 0);
         lv_obj_set_style_radius(button, 6, 0);
         lv_obj_t* label = lv_label_create(button);
