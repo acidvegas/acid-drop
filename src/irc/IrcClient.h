@@ -109,7 +109,12 @@ public:
 
 private:
     // --- connection ---
-    void openSocket();
+    // The socket connect runs on its own task: a TLS handshake takes seconds
+    // and the Arduino socket API has no non-blocking connect, so doing it
+    // inline freezes the whole UI. startConnect() kicks it off, pollConnect()
+    // picks up the result.
+    void startConnect();
+    void pollConnect();
     void handleSocket();
     void onDisconnected(const char* why);
     void scheduleReconnect();
@@ -151,6 +156,7 @@ private:
 
     // --- socket ---
     std::unique_ptr<WiFiClient> m_socket;
+    void*    m_job = nullptr;      // in-flight ConnectJob, owned by the task
     bool     m_usingTls        = false;
     bool     m_triedTlsAlready = false;   // drives the plaintext fallback
     String   m_rxBuffer;

@@ -6,6 +6,7 @@
 
 #include "core/Log.h"
 #include "core/Settings.h"
+#include "core/Storage.h"
 #include "irc/ChannelList.h"
 
 namespace {
@@ -66,6 +67,54 @@ String ctrlColor(uint8_t index) {
 }
 
 constexpr char RESET = '\x0F';
+
+// A connection attempt in flight on its own task.
+//
+// The task owns the job while `abandoned` is set (the client gave up on it and
+// must not touch it again); otherwise the client owns it once `done` is set.
+struct ConnectJob {
+    String        host;
+    uint16_t      port      = 0;
+    bool          tls       = false;
+    String        caPem;                 // empty means do not verify
+    WiFiClient*   socket    = nullptr;
+    volatile bool done      = false;
+    volatile bool ok        = false;
+    volatile bool abandoned = false;
+};
+
+void connectTask(void* arg) {
+    ConnectJob* job = static_cast<ConnectJob*>(arg);
+
+    WiFiClient* socket;
+    if (job->tls) {
+        auto* secure = new WiFiClientSecure();
+        if (job->caPem.isEmpty()) secure->setInsecure();
+        else                      secure->setCACert(job->caPem.c_str());
+        secure->setHandshakeTimeout(12);
+        secure->setTimeout(12);
+        socket = secure;
+    } else {
+        socket = new WiFiClient();
+        socket->setTimeout(8);
+    }
+
+    const bool ok = socket->connect(job->host.c_str(), job->port);
+
+    if (job->abandoned) {
+        // Nobody is waiting for this any more, so clean up here.
+        socket->stop();
+        delete socket;
+        delete job;
+        vTaskDelete(nullptr);
+        return;
+    }
+
+    job->socket = socket;
+    job->ok     = ok;
+    job->done   = true;
+    vTaskDelete(nullptr);
+}
 
 } // namespace
 
@@ -140,10 +189,16 @@ void IrcClient::connect() {
     m_triedTlsAlready = false;
     m_reconnectDelay  = 0;
     m_reconnectAt     = 0;
-    if (m_state == IrcState::Offline || m_state == IrcState::Reconnecting) openSocket();
+    if (m_state == IrcState::Offline || m_state == IrcState::Reconnecting) startConnect();
 }
 
 void IrcClient::disconnect(const String& quitMessage, bool stayOffline) {
+    // Hand any in-flight connect over to its own task to clean up.
+    if (m_job != nullptr) {
+        static_cast<ConnectJob*>(m_job)->abandoned = true;
+        m_job = nullptr;
+    }
+
     if (isConnected()) {
         sendRaw("QUIT :" + (quitMessage.isEmpty() ? String("ACID DROP") : quitMessage));
         m_socket->flush();
@@ -157,12 +212,12 @@ void IrcClient::disconnect(const String& quitMessage, bool stayOffline) {
     setState(stayOffline ? IrcState::Offline : IrcState::Reconnecting);
 }
 
-void IrcClient::openSocket() {
+void IrcClient::startConnect() {
     const String host = settings::getText("irc_server");
     int          port = settings::getInt("irc_port");
     bool         tls  = settings::getBool("irc_tls");
 
-    // Second attempt after a TLS failure, if the fallback is enabled.
+    // Second attempt within this cycle, after TLS failed.
     if (m_triedTlsAlready && settings::getBool("irc_fallback")) {
         tls  = false;
         port = 6667;
@@ -176,57 +231,79 @@ void IrcClient::openSocket() {
     m_socket.reset();
     m_usingTls = tls;
 
-    if (tls) {
-        auto* secure = new WiFiClientSecure();
-        if (settings::getBool("irc_tlsverif")) {
-            // The only trust store we have is whatever the user put on the SD
-            // card. Without it, verification cannot mean anything, so say so
-            // rather than pretending the connection was verified.
-            File ca = SD.open("/irc-ca.pem", FILE_READ);
-            if (ca && ca.size() > 0) {
-                String pem;
-                pem.reserve(ca.size() + 1);
-                while (ca.available()) pem += static_cast<char>(ca.read());
-                secure->setCACert(pem.c_str());
-                addStatus("Using CA certificate from /irc-ca.pem", LINE_LOCAL);
-            } else {
-                secure->setInsecure();
-                addStatus("Certificate verification is on but /irc-ca.pem is missing "
-                          "- connecting without verification", LINE_ERROR);
-            }
-            if (ca) ca.close();
+    auto* job = new ConnectJob();
+    job->host = host;
+    job->port = static_cast<uint16_t>(port);
+    job->tls  = tls;
+
+    // The certificate is read here, on this task: the SD card shares the SPI
+    // bus with the display and must not be touched from another thread.
+    if (tls && settings::getBool("irc_tlsverif") && storage::ensureSdCard()) {
+        File ca = SD.open("/irc-ca.pem", FILE_READ);
+        if (ca && ca.size() > 0) {
+            job->caPem.reserve(ca.size() + 1);
+            while (ca.available()) job->caPem += static_cast<char>(ca.read());
+            addStatus("Using CA certificate from /irc-ca.pem", LINE_LOCAL);
         } else {
-            secure->setInsecure();
+            addStatus("Certificate verification is on but /irc-ca.pem is missing "
+                      "- connecting without verification", LINE_ERROR);
         }
-        secure->setHandshakeTimeout(8);
-        secure->setTimeout(8);
-        m_socket.reset(secure);
-    } else {
-        auto* plain = new WiFiClient();
-        plain->setTimeout(8);
-        m_socket.reset(plain);
+        if (ca) ca.close();
     }
 
+    m_job = job;
     m_connectStartedAt = millis();
 
-    // This blocks: the Arduino socket API has no non-blocking connect, and a
-    // TLS handshake on an ESP32 takes a couple of seconds. The UI is frozen for
-    // that long, which is why the status line goes up first.
-    const bool ok = m_socket->connect(host.c_str(), port);
+    // 12kB: an mbedTLS handshake needs most of that.
+    if (xTaskCreate(connectTask, "irc-connect", 12288, job, 1, nullptr) != pdPASS) {
+        LOG_E(TAG, "could not start the connect task");
+        m_job = nullptr;
+        delete job;
+        scheduleReconnect();
+    }
+}
+
+void IrcClient::pollConnect() {
+    auto* job = static_cast<ConnectJob*>(m_job);
+    if (job == nullptr) {
+        scheduleReconnect();
+        return;
+    }
+    if (!job->done) {
+        // Give up on a task that has run far past any sane handshake.
+        if (millis() - m_connectStartedAt > 30000UL) {
+            LOG_W(TAG, "connect task overran, abandoning it");
+            job->abandoned = true;
+            m_job = nullptr;
+            scheduleReconnect();
+        }
+        return;
+    }
+
+    const bool  ok     = job->ok;
+    WiFiClient* socket = job->socket;
+    m_job = nullptr;
+    delete job;
 
     if (!ok) {
-        LOG_W(TAG, "connect failed");
+        LOG_W(TAG, "connect failed (tls=%d), free heap %u",
+              m_usingTls ? 1 : 0, (unsigned)ESP.getFreeHeap());
         addStatus("Connection failed", LINE_ERROR);
-        m_socket.reset();
+        if (socket) {
+            socket->stop();
+            delete socket;
+        }
 
         if (m_usingTls && !m_triedTlsAlready && settings::getBool("irc_fallback")) {
             m_triedTlsAlready = true;
-            openSocket();     // immediate plaintext retry
+            startConnect();          // immediate plaintext retry
             return;
         }
         scheduleReconnect();
         return;
     }
+
+    m_socket.reset(socket);
 
     m_rxBuffer       = "";
     m_lastServerLine = millis();
@@ -265,6 +342,12 @@ void IrcClient::scheduleReconnect() {
         if (m_reconnectDelay > m_cfg.reconnectMaxS) m_reconnectDelay = m_cfg.reconnectMaxS;
     }
 
+    // Start each cycle from the configured settings again. Without this the
+    // plaintext fallback latches: one TLS failure and every future attempt
+    // goes to 6667 forever, which never recovers on a server that only
+    // accepts TLS.
+    m_triedTlsAlready = false;
+
     m_reconnectAt = millis() + m_reconnectDelay * 1000UL;
     addStatus("Reconnecting in " + String(m_reconnectDelay) + "s", LINE_LOCAL);
     setState(IrcState::Reconnecting);
@@ -284,13 +367,18 @@ void IrcClient::loop() {
         return;
     }
 
+    if (m_state == IrcState::Connecting) {
+        pollConnect();
+        return;
+    }
+
     if (m_state == IrcState::Reconnecting) {
-        if (static_cast<int32_t>(now - m_reconnectAt) >= 0) openSocket();
+        if (static_cast<int32_t>(now - m_reconnectAt) >= 0) startConnect();
         return;
     }
 
     if (m_state == IrcState::Offline) {
-        openSocket();
+        startConnect();
         return;
     }
 

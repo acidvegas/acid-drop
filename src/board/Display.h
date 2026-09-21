@@ -3,20 +3,20 @@
 #include <LovyanGFX.hpp>
 #include <lvgl.h>
 
-// LovyanGFX device for the T-Deck's ST7789 panel + GT911 touch controller.
+// LovyanGFX device for the T-Deck's ST7789 panel.
+//
+// Touch is deliberately NOT configured here. LovyanGFX would initialise the
+// I2C peripheral itself, and the keyboard already owns that port and those
+// pins through Wire; two owners means one of them stops working. See
+// board/Touch.h.
 class AcidLGFX : public lgfx::LGFX_Device {
 public:
     AcidLGFX();
-
-    // GT911 panels ship strapped to either 0x5D or 0x14 depending on the batch.
-    // Must be called before init().
-    void setTouchAddress(uint8_t address);
 
 private:
     lgfx::Panel_ST7789   _panel;
     lgfx::Bus_SPI        _bus;
     lgfx::Light_PWM      _light;
-    lgfx::Touch_GT911    _touch;
 };
 
 extern AcidLGFX gfx;

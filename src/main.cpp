@@ -2,7 +2,6 @@
 // https://github.com/acidvegas/acid-drop
 
 #include <Arduino.h>
-#include <SD.h>
 #include <SPI.h>
 #include <Wire.h>
 #include <lvgl.h>
@@ -67,20 +66,6 @@ void deselectSpiDevices() {
     digitalWrite(RADIO_CS_PIN, HIGH);
 }
 
-bool mountSdCard() {
-    pinMode(BOARD_SDCARD_CS, OUTPUT);
-    digitalWrite(BOARD_SDCARD_CS, HIGH);
-
-    // The card shares SPI2 with the display, which LovyanGFX has already set up.
-    if (!SD.begin(BOARD_SDCARD_CS, SPI, 4000000U)) {
-        LOG_I(TAG, "no SD card");
-        return false;
-    }
-
-    LOG_I(TAG, "SD card mounted, %llu MB", SD.cardSize() / (1024ULL * 1024ULL));
-    return true;
-}
-
 // Holding a key during boot is the escape hatch when a setting has made the
 // device unusable.
 void checkRecoveryKey() {
@@ -127,12 +112,10 @@ void setup() {
     checkRecoveryKey();
     drawBootLogo();
 
+    // Park every chip-select on the shared bus. The SD card and the LoRa radio
+    // are both brought up lazily, so nothing else touches SPI during boot.
     bootStage("spi");
     deselectSpiDevices();
-    SPI.begin(BOARD_SPI_SCK, BOARD_SPI_MISO, BOARD_SPI_MOSI);
-
-    bootStage("sd card");
-    mountSdCard();
 
     bootStage("power");   power::begin();
     bootStage("audio");   audio::begin();
@@ -144,7 +127,6 @@ void setup() {
 
     bootStage("sound");
     audio::alert(Alert::Boot);
-    delay(700);          // let the logo and the jingle land
 
     bootStage("ui");
     ui::begin();
