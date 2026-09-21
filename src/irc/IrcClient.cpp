@@ -1324,8 +1324,8 @@ bool IrcClient::isHighlight(const String& text) const {
 
     if (containsWord(m_nick)) return true;
 
-    for (const String& word : irc::splitList(settings::getText("irc_hilight"))) {
-        if (containsWord(word)) return true;
+    for (const String& term : irc::splitList(settings::getText("irc_hilight"))) {
+        if (containsWord(term)) return true;
     }
     return false;
 }
