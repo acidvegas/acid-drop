@@ -60,6 +60,10 @@ volatile int16_t s_ballDown  = 0;
 volatile int16_t s_ballLeft  = 0;
 volatile int16_t s_ballRight = 0;
 
+volatile uint32_t s_clickEdges = 0;
+
+void IRAM_ATTR onBallClick() { s_clickEdges++; }
+
 void IRAM_ATTR onBallUp()    { s_ballUp++; }
 void IRAM_ATTR onBallDown()  { s_ballDown++; }
 void IRAM_ATTR onBallLeft()  { s_ballLeft++; }
@@ -203,7 +207,13 @@ void begin() {
         pinMode(axis.pin, INPUT_PULLUP);
         attachInterrupt(digitalPinToInterrupt(axis.pin), axis.handler, FALLING);
     }
+    // GPIO 0, shared with the boot strapping pin. Verified against LilyGo's
+    // own UnitTest example, which puts the centre press in the same array as
+    // the four direction lines and watches all five for CHANGE rather than
+    // reading a level - which is what the previous attempt did, and why
+    // holding the button registered as nothing at all.
     pinMode(BOARD_TRACKBALL_CLICK, INPUT_PULLUP);
+    attachInterrupt(digitalPinToInterrupt(BOARD_TRACKBALL_CLICK), onBallClick, CHANGE);
 
     // The click line is GPIO0, which is also the boot strapping pin. Give the
     // pull-up time to win before anything reads it as a press.
@@ -240,22 +250,36 @@ void loop() {
     static bool     holdFired      = false;
     constexpr uint32_t kHoldMs = 600;
 
-    const bool click = digitalRead(BOARD_TRACKBALL_CLICK) == LOW;
+    // An edge means the button moved. Sample the level right after to decide
+    // whether that edge was a press or a release.
+    static uint32_t seenEdges = 0;
+    noInterrupts();
+    const uint32_t edges = s_clickEdges;
+    interrupts();
 
-    if (click && !lastClick) {
-        clickStartedAt = now;
-        holdFired      = false;
+    if (edges != seenEdges) {
+        seenEdges = edges;
+        const bool down = digitalRead(BOARD_TRACKBALL_CLICK) == LOW;
+        LOG_I(TAG, "trackball button %s", down ? "down" : "up");
+
+        if (down) {
+            clickStartedAt = now;
+            holdFired      = false;
+        } else if (!holdFired) {
+            s_keys.push(LV_KEY_ENTER);
+        }
         noteActivity();
-    } else if (click && !holdFired && now - clickStartedAt >= kHoldMs) {
-        holdFired = true;
-        noteActivity();
-        if (s_holdHandler) s_holdHandler();
-    } else if (!click && lastClick && !holdFired) {
-        s_keys.push(LV_KEY_ENTER);
-        noteActivity();
+        lastClick = down;
     }
 
-    lastClick = click;
+    // A hold never produces a second edge, so it has to be timed from the
+    // press rather than waited for.
+    if (lastClick && !holdFired && now - clickStartedAt >= kHoldMs) {
+        holdFired = true;
+        noteActivity();
+        LOG_I(TAG, "trackball held (handler %s)", s_holdHandler ? "set" : "MISSING");
+        if (s_holdHandler) s_holdHandler();
+    }
 }
 
 lv_indev_t* keypad()  { return s_keypad; }

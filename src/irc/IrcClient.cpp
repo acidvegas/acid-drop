@@ -61,6 +61,19 @@ bool isChannelNumeric(int numeric) {
     }
 }
 
+// The network services. Messages from these are automated, not conversations,
+// so they belong in the status window rather than each getting a window.
+bool isService(const String& nick) {
+    static const char* const kServices[] = {
+        "NickServ", "ChanServ", "OperServ", "MemoServ", "HostServ",
+        "BotServ", "SaslServ", "Global", "StatServ", "HelpServ", nullptr
+    };
+    for (const char* const* name = kServices; *name; name++) {
+        if (irc::equalsIgnoreCaseIrc(nick, *name)) return true;
+    }
+    return false;
+}
+
 String ctrlColor(uint8_t index) {
     // Control byte, up to three digits, terminator.
     char buffer[8];
@@ -763,10 +776,29 @@ void IrcClient::handlePrivmsg(const IrcMessage& message, bool isNotice) {
         return;
     }
 
-    const bool  toMe    = irc::equalsIgnoreCaseIrc(target, m_nick);
-    IrcBuffer&  where   = toMe ? ensureBuffer(from, BufferKind::Query)
-                               : ensureBuffer(target, BufferKind::Channel);
-    const bool  mention = isHighlight(text) || (toMe && !isNotice);
+    const bool toMe = irc::equalsIgnoreCaseIrc(target, m_nick);
+
+    // Anything addressed to us used to open a private window, which meant one
+    // per service and one per server that ever sent a notice. Only an actual
+    // person gets a window:
+    //   - notices go to the status window, as they do in every other client
+    //   - so does anything from a server, which has no user@host in its prefix
+    //   - so do the network services, which are bots, not conversations
+    const bool fromServer = message.fromServer() || from.indexOf('.') >= 0;
+    const bool fromService = isService(from);
+
+    IrcBuffer* target_buffer;
+    if (!toMe) {
+        target_buffer = &ensureBuffer(target, BufferKind::Channel);
+    } else if (isNotice || fromServer || fromService) {
+        target_buffer = &status();
+    } else {
+        target_buffer = &ensureBuffer(from, BufferKind::Query);
+    }
+
+    IrcBuffer& where = *target_buffer;
+    const bool mention = isHighlight(text) ||
+                         (toMe && !isNotice && !fromServer && !fromService);
 
     String line;
     if (isNotice) {
@@ -836,19 +868,31 @@ void IrcClient::handleJoin(const IrcMessage& message) {
     const String channelName = message.param(0);
     const uint32_t stamp = lineStamp(message);
 
-    IrcBuffer& channel = ensureBuffer(channelName, BufferKind::Channel);
-
+    // Check before creating anything: a channel the server pushed us into
+    // should leave no window behind at all, and ensureBuffer() would make one.
     if (irc::equalsIgnoreCaseIrc(message.nick, m_nick)) {
-        // Some networks drop you into a lobby or announcement channel on
-        // connect. If we never asked for this one, leave again rather than
-        // silently sitting in it.
-        if (!channel.requested) {
+        IrcBuffer* known = findBuffer(channelName);
+        if (known == nullptr || !known->requested) {
             LOG_I(TAG, "server put us in %s unasked, parting", channelName.c_str());
             addStatus("Left " + channelName + " (joined by the server, not requested)",
                       LINE_LOCAL);
             sendRaw("PART " + channelName + " :not requested");
+
+            // Drop the window too, if one had already been made for it.
+            for (size_t i = 1; i < m_buffers.size(); i++) {
+                if (irc::equalsIgnoreCaseIrc(m_buffers[i]->name, channelName)) {
+                    m_buffers.erase(m_buffers.begin() + i);
+                    if (onBufferListChanged) onBufferListChanged();
+                    break;
+                }
+            }
             return;
         }
+    }
+
+    IrcBuffer& channel = ensureBuffer(channelName, BufferKind::Channel);
+
+    if (irc::equalsIgnoreCaseIrc(message.nick, m_nick)) {
 
         channel.joined      = true;
         channel.retryAt     = 0;
