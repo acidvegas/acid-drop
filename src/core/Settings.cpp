@@ -9,6 +9,7 @@
 #include <nvs_flash.h>
 
 #include <map>
+#include <cstring>
 
 #include "core/Log.h"
 
@@ -128,7 +129,7 @@ const std::vector<SettingDef> kDefs = {
     DEF_ENUM("irc_ts",      "Appearance", "Timestamps",    nullptr, kOptTimestamp, 1),
     DEF_BOOL("irc_joinpart","Appearance", "Show joins/parts", nullptr, 1),
     DEF_BOOL("irc_showmode","Appearance", "Show mode changes", nullptr, 1),
-    DEF_BOOL("irc_showraw", "Appearance", "Raw server lines", "Mirror everything into the status window", 1),
+    DEF_BOOL("irc_showraw", "Appearance", "Raw server lines", "Mirror everything into the status window. Costs memory on a busy server.", 0),
     DEF_INT("irc_scrollbk","Appearance", "Scrollback",    "Lines kept per window, held in PSRAM", 100, 5000, 100, "lines", 1000),
     DEF_TEXT("irc_hilight", "Appearance", "Highlight words", "Comma separated, in addition to your nick", ""),
     DEF_BOOL("irc_beepctcp","Appearance", "Allow CTCP",    "Answer VERSION, PING and TIME requests", 1),
@@ -164,9 +165,16 @@ const std::vector<SettingDef> kDefs = {
 #undef DEF_ENUM
 
 // --- storage --------------------------------------------------------------
-Preferences               s_prefs;
-std::map<String, int32_t> s_nums;
-std::map<String, String>  s_texts;
+// Keyed by the registry's own string literals and compared with strcmp, so a
+// lookup costs no allocation. Keying by String would build one on every read,
+// and these are read from the status bar and launcher tick paths.
+struct CStrLess {
+    bool operator()(const char* a, const char* b) const { return strcmp(a, b) < 0; }
+};
+
+Preferences                             s_prefs;
+std::map<const char*, int32_t, CStrLess> s_nums;
+std::map<const char*, String, CStrLess>  s_texts;
 std::vector<ChangeCb>     s_listeners;
 bool                      s_ready = false;
 

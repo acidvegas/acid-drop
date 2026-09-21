@@ -10,18 +10,28 @@ namespace channels {
 namespace {
 
 constexpr const char* TAG       = "channels";
-constexpr const char* kNamespace = "aciddrop";
-constexpr const char* kKey       = "chanlist";
-constexpr const char* kLegacyKey = "irc_chans";
+// Its own namespace: the settings registry holds an open read-write handle on
+// "aciddrop" for the life of the process, and opening the same namespace a
+// second time to write is asking for trouble.
+constexpr const char* kNamespace       = "acidchan";
+constexpr const char* kLegacyNamespace = "aciddrop";
+constexpr const char* kKey             = "chanlist";
+constexpr const char* kLegacyKey       = "irc_chans";
 constexpr size_t      kMaxChannels = 32;
 
 std::vector<IrcChannelConfig> s_channels;
 
-void seedFromLegacy(Preferences& prefs) {
+void seedFromLegacy() {
     // Before the list gained per-channel options it was one comma-separated
-    // string. Carry it over so an upgrade does not silently stop auto-joining.
-    const String legacy = prefs.isKey(kLegacyKey) ? prefs.getString(kLegacyKey)
-                                                  : String("#superbowl");
+    // string in the settings namespace. Carry it over so an upgrade does not
+    // silently stop auto-joining. Opened read-only, alongside the settings
+    // registry's own handle.
+    Preferences legacyPrefs;
+    String legacy = "#superbowl";
+    if (legacyPrefs.begin(kLegacyNamespace, true)) {
+        if (legacyPrefs.isKey(kLegacyKey)) legacy = legacyPrefs.getString(kLegacyKey);
+        legacyPrefs.end();
+    }
 
     for (const String& entry : irc::splitList(legacy)) {
         const int space = entry.indexOf(' ');
@@ -65,8 +75,8 @@ void begin() {
             }
         }
     } else {
-        seedFromLegacy(prefs);
         prefs.end();
+        seedFromLegacy();
         save();
         LOG_I(TAG, "%u channels loaded", (unsigned)s_channels.size());
         return;
