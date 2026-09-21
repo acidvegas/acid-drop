@@ -17,6 +17,11 @@ private:
     lgfx::Panel_ST7789   _panel;
     lgfx::Bus_SPI        _bus;
     lgfx::Light_PWM      _light;
+    lgfx::Touch_GT911    _touch;
+
+public:
+    // GT911 panels are strapped to 0x5D or 0x14 depending on the batch.
+    void setTouchAddress(uint8_t address);
 };
 
 extern AcidLGFX gfx;

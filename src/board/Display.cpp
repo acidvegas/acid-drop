@@ -5,7 +5,6 @@
 #include <esp_heap_caps.h>
 
 #include "board/pins.h"
-#include "board/Touch.h"
 #include "core/Log.h"
 #include "core/Settings.h"
 
@@ -63,7 +62,32 @@ AcidLGFX::AcidLGFX() {
         _panel.setLight(&_light);
     }
 
+    {   // GT911 capacitive touch. LovyanGFX applies the display rotation to
+        // the reported coordinates, which is the part I got wrong by hand.
+        auto cfg = _touch.config();
+        cfg.x_min      = 0;
+        cfg.x_max      = 239;
+        cfg.y_min      = 0;
+        cfg.y_max      = 319;
+        cfg.pin_int    = BOARD_TOUCH_INT;
+        cfg.bus_shared = true;
+        cfg.offset_rotation = 0;
+        cfg.i2c_port   = 0;
+        cfg.i2c_addr   = TOUCH_I2C_ADDR_PRI;
+        cfg.pin_sda    = BOARD_I2C_SDA;
+        cfg.pin_scl    = BOARD_I2C_SCL;
+        cfg.freq       = BOARD_I2C_FREQ;
+        _touch.config(cfg);
+        _panel.setTouch(&_touch);
+    }
+
     setPanel(&_panel);
+}
+
+void AcidLGFX::setTouchAddress(uint8_t address) {
+    auto cfg = _touch.config();
+    cfg.i2c_addr = address;
+    _touch.config(cfg);
 }
 
 namespace display {
@@ -99,15 +123,25 @@ uint32_t tickCb() {
 } // namespace
 
 bool begin() {
+    // Bring the bus up first so the controller can be probed: LovyanGFX only
+    // tries the address it is configured with.
+    lgfx::i2c::init(0, BOARD_I2C_SDA, BOARD_I2C_SCL);
+    for (uint8_t candidate : {TOUCH_I2C_ADDR_PRI, TOUCH_I2C_ADDR_ALT}) {
+        uint8_t probe = 0;
+        if (lgfx::i2c::transactionRead(0, candidate, &probe, 1, BOARD_I2C_FREQ).has_value()) {
+            gfx.setTouchAddress(candidate);
+            LOG_I("display", "GT911 at 0x%02X", candidate);
+            break;
+        }
+    }
+
     if (!gfx.init()) {
         LOG_E("display", "panel init failed");
         return false;
     }
 
     // "Upside down" is the same landscape axis rotated a half turn.
-    const bool flipped = settings::getEnum("rotation") == 1;
-    gfx.setRotation(flipped ? 3 : 1);
-    touch::setFlipped(flipped);
+    gfx.setRotation(settings::getEnum("rotation") == 1 ? 3 : 1);
     gfx.setBrightness(0);   // Stay dark until the first frame is drawn
     gfx.fillScreen(0x0000);
 

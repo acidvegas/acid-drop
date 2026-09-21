@@ -1,10 +1,8 @@
 #include "board/Input.h"
 
-#include <Wire.h>
 
 #include "board/Audio.h"
 #include "board/Display.h"
-#include "board/Touch.h"
 #include "board/pins.h"
 #include "core/Log.h"
 
@@ -95,12 +93,15 @@ uint32_t translateKeyboard(char raw) {
 }
 
 void pollKeyboard() {
-    // The keypad returns 0x00 when nothing was pressed since the last read.
-    if (Wire.requestFrom(static_cast<uint8_t>(KEYBOARD_I2C_ADDR), static_cast<uint8_t>(1)) != 1) {
+    // Through lgfx::i2c, not Wire: LovyanGFX owns this port for the touch
+    // controller, and two drivers on one port means one of them silently stops
+    // working. The keypad returns 0x00 when nothing has been pressed.
+    uint8_t raw = 0;
+    if (!lgfx::i2c::transactionRead(0, KEYBOARD_I2C_ADDR, &raw,
+                                    1, BOARD_I2C_FREQ).has_value()) {
         return;
     }
-    const int raw = Wire.read();
-    if (raw <= 0) return;
+    if (raw == 0) return;
 
     s_keys.push(translateKeyboard(static_cast<char>(raw)));
     noteActivity();
@@ -156,9 +157,9 @@ void pointerReadCb(lv_indev_t* indev, lv_indev_data_t* data) {
     static int32_t lastX = 0;
     static int32_t lastY = 0;
 
-    int16_t x = 0;
-    int16_t y = 0;
-    const bool touched = touch::read(x, y);
+    uint16_t x = 0;
+    uint16_t y = 0;
+    const bool touched = gfx.getTouch(&x, &y);
 
     if (touched) {
         lastX = x;
@@ -207,8 +208,6 @@ void begin() {
     // The click line is GPIO0, which is also the boot strapping pin. Give the
     // pull-up time to win before anything reads it as a press.
     s_readyAt      = millis() + 400;
-    touch::begin();
-
     s_lastActivity = millis();
     LOG_I(TAG, "touch, trackball and keyboard registered");
 }

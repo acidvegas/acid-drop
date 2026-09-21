@@ -20,7 +20,6 @@ enum class AppId : uint8_t {
     Settings,      // everything that is not IRC
     Wifi,
     Gps,
-    TouchCalibration,
     Syslog,
     About,
 };
