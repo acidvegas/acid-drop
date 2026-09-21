@@ -26,10 +26,30 @@ struct Entry {
 lv_obj_t* s_grid = nullptr;
 
 struct Tile {
+    lv_obj_t* root;
     lv_obj_t* status;
     lv_obj_t* dot;
 };
 std::vector<Tile> s_tiles;
+
+constexpr int kColumns = 3;
+int s_focus = 0;
+
+// LVGL's keypad navigation is a flat NEXT/PREV walk, which on a grid means the
+// trackball crawls along rows instead of moving the way the ball does. The
+// launcher owns its own navigation so up/down/left/right mean what they look
+// like, and so focus can never leave the grid.
+void focusTile(int index) {
+    if (s_tiles.empty()) return;
+
+    const int count = static_cast<int>(s_tiles.size());
+    if (index < 0)      index += count;
+    if (index >= count) index -= count;
+
+    s_focus = index;
+    lv_group_focus_obj(s_tiles[index].root);
+    lv_obj_scroll_to_view(s_tiles[index].root, LV_ANIM_OFF);
+}
 
 String ircStatus() {
     IrcClient& client = ui::irc();
@@ -87,6 +107,44 @@ const Entry kEntries[] = {
     {LV_SYMBOL_LIST,     "Syslog",   ui::AppId::Syslog,   syslogStatus,   nullptr},
     {LV_SYMBOL_FILE,     "About",    ui::AppId::About,    aboutStatus,    nullptr},
 };
+
+bool keyHook(uint32_t key) {
+    if (s_tiles.empty()) return false;
+
+    const int count = static_cast<int>(s_tiles.size());
+    const int rows  = (count + kColumns - 1) / kColumns;
+
+    switch (key) {
+        case LV_KEY_LEFT:
+            focusTile(s_focus - 1);
+            return true;
+        case LV_KEY_RIGHT:
+            focusTile(s_focus + 1);
+            return true;
+
+        case LV_KEY_UP: {
+            int next = s_focus - kColumns;
+            if (next < 0) next = s_focus + (rows - 1) * kColumns;   // wrap to the bottom
+            while (next >= count) next -= kColumns;
+            focusTile(next);
+            return true;
+        }
+        case LV_KEY_DOWN: {
+            int next = s_focus + kColumns;
+            if (next >= count) next = s_focus % kColumns;            // wrap to the top
+            focusTile(next);
+            return true;
+        }
+
+        case LV_KEY_ENTER:
+            // The trackball click is the select button here.
+            if (s_focus >= 0 && s_focus < count) ui::openApp(kEntries[s_focus].app);
+            return true;
+
+        default:
+            return false;
+    }
+}
 
 void tileEventCb(lv_event_t* event) {
     const Entry* entry = static_cast<const Entry*>(lv_event_get_user_data(event));
@@ -154,18 +212,19 @@ void create(lv_obj_t* parent) {
         lv_obj_set_hidden(dot, true);
 
         lv_obj_add_event_cb(tile, tileEventCb, LV_EVENT_CLICKED, const_cast<Entry*>(&entry));
-        s_tiles.push_back({status, dot});
+        s_tiles.push_back({tile, status, dot});
     }
 
-    if (lv_obj_get_child_count(s_grid) > 0) {
-        lv_group_focus_obj(lv_obj_get_child(s_grid, 0));
-    }
+    input::setKeyHook(keyHook);
+    focusTile(0);
     tick();
 }
 
 void destroy() {
+    input::clearKeyHook();
     s_grid = nullptr;
     s_tiles.clear();
+    s_focus = 0;
 }
 
 void tick() {

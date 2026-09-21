@@ -20,6 +20,7 @@ lv_obj_t* s_page   = nullptr;
 lv_obj_t* s_tabs   = nullptr;
 lv_obj_t* s_input  = nullptr;
 lv_obj_t* s_topic  = nullptr;
+lv_obj_t* s_reconnectLabel = nullptr;
 TermView  s_view;
 
 size_t s_activeBuffer = 0;
@@ -53,6 +54,14 @@ void updateTitle() {
     // Just the window name. The connection state has its own line below, and
     // the status bar has room for one short word, not two.
     statusbar::setTitle(buffer.isStatus() ? String("status") : buffer.name);
+
+    // Make the reconnect button obvious when it is the thing you want.
+    if (s_reconnectLabel) {
+        const bool offline = client.state() != IrcState::Ready;
+        lv_obj_set_style_text_color(s_reconnectLabel,
+                                    offline ? lv_color_hex(theme::kWarning)
+                                            : theme::textDim(), 0);
+    }
 
     if (!s_topic) return;
 
@@ -240,6 +249,29 @@ void create(lv_obj_t* parent) {
     lv_obj_set_scroll_dir(s_tabs, LV_DIR_HOR);
     lv_obj_set_scrollbar_mode(s_tabs, LV_SCROLLBAR_MODE_OFF);
 
+    lv_obj_t* reconnect = lv_obj_create(tabRow);
+    lv_obj_remove_style_all(reconnect);
+    lv_obj_set_size(reconnect, 26, 22);
+    lv_obj_set_clickable(reconnect, true);
+    lv_obj_set_scrollable(reconnect, false);
+    lv_obj_set_style_bg_color(reconnect, lv_color_hex(theme::kSurfaceAlt), 0);
+    lv_obj_set_style_bg_opa(reconnect, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(reconnect, 4, 0);
+    lv_group_add_obj(input::group(), reconnect);
+
+    s_reconnectLabel = lv_label_create(reconnect);
+    lv_label_set_text(s_reconnectLabel, LV_SYMBOL_REFRESH);
+    lv_obj_set_style_text_font(s_reconnectLabel, theme::uiFontSmall(), 0);
+    lv_obj_set_style_text_color(s_reconnectLabel, theme::textDim(), 0);
+    lv_obj_center(s_reconnectLabel);
+
+    // Reconnect now, rather than sitting out the backoff.
+    lv_obj_add_event_cb(reconnect, [](lv_event_t*) {
+        ui::irc().disconnect("Reconnecting", false);
+        ui::irc().connect();
+        ui::toast("Reconnecting...");
+    }, LV_EVENT_CLICKED, nullptr);
+
     lv_obj_t* gear = lv_obj_create(tabRow);
     lv_obj_remove_style_all(gear);
     lv_obj_set_size(gear, 26, 22);
@@ -317,6 +349,7 @@ void destroy() {
     s_tabs  = nullptr;
     s_input = nullptr;
     s_topic = nullptr;
+    s_reconnectLabel = nullptr;
     s_tabButtons.clear();
 }
 
