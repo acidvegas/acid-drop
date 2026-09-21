@@ -130,7 +130,7 @@ const std::vector<SettingDef> kDefs = {
     DEF_BOOL("irc_joinpart","Appearance", "Show joins/parts", nullptr, 1),
     DEF_BOOL("irc_showmode","Appearance", "Show mode changes", nullptr, 1),
     DEF_BOOL("irc_showraw", "Appearance", "Raw server lines", "Mirror everything into the status window. Costs memory on a busy server.", 0),
-    DEF_INT("irc_scrollbk","Appearance", "Scrollback",    "Lines kept per window, held in PSRAM", 100, 5000, 100, "lines", 1000),
+    DEF_INT("irc_scrollbk","Appearance", "Scrollback",    "Lines kept per window. This lives in internal RAM, so large values across several windows cost real memory.", 100, 3000, 100, "lines", 400),
     DEF_TEXT("irc_hilight", "Appearance", "Highlight words", "Comma separated, in addition to your nick", ""),
     DEF_BOOL("irc_beepctcp","Appearance", "Allow CTCP",    "Answer VERSION, PING and TIME requests", 1),
 
