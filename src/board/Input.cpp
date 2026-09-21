@@ -3,6 +3,7 @@
 #include <Wire.h>
 
 #include "board/Display.h"
+#include "board/Touch.h"
 #include "board/pins.h"
 #include "core/Log.h"
 
@@ -152,9 +153,9 @@ void pointerReadCb(lv_indev_t* indev, lv_indev_data_t* data) {
     static int32_t lastX = 0;
     static int32_t lastY = 0;
 
-    uint16_t x = 0;
-    uint16_t y = 0;
-    const bool touched = gfx.getTouch(&x, &y);
+    int16_t x = 0;
+    int16_t y = 0;
+    const bool touched = touch::read(x, y);
 
     if (touched) {
         lastX = x;
@@ -203,6 +204,8 @@ void begin() {
     // The click line is GPIO0, which is also the boot strapping pin. Give the
     // pull-up time to win before anything reads it as a press.
     s_readyAt      = millis() + 400;
+    touch::begin();
+
     s_lastActivity = millis();
     LOG_I(TAG, "touch, trackball and keyboard registered");
 }

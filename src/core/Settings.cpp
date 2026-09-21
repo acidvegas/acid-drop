@@ -3,6 +3,8 @@
 #include <ArduinoJson.h>
 #include <Preferences.h>
 #include <SD.h>
+
+#include "core/Storage.h"
 #include <esp_mac.h>
 #include <nvs_flash.h>
 
@@ -399,6 +401,11 @@ void onChange(ChangeCb cb) {
 
 // --- JSON -----------------------------------------------------------------
 bool exportJson(const String& path, bool includeSecrets) {
+    if (!storage::ensureSdCard()) {
+        LOG_E(TAG, "export: no SD card");
+        return false;
+    }
+
     JsonDocument doc;
     doc["_firmware"] = "acid-drop";
 
@@ -427,6 +434,11 @@ bool exportJson(const String& path, bool includeSecrets) {
 }
 
 bool importJson(const String& path) {
+    if (!storage::ensureSdCard()) {
+        LOG_E(TAG, "import: no SD card");
+        return false;
+    }
+
     File file = SD.open(path, FILE_READ);
     if (!file) {
         LOG_E(TAG, "import: cannot open %s", path.c_str());

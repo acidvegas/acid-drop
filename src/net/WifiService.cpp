@@ -81,7 +81,11 @@ void collectScanResults() {
         entry.rssi    = WiFi.RSSI(i);
         entry.channel = WiFi.channel(i);
         entry.auth    = WiFi.encryptionType(i);
-        if (entry.ssid.isEmpty()) entry.ssid = "<hidden>";
+
+        // A hidden network cannot be joined by name from this list, so listing
+        // it is only clutter.
+        if (entry.ssid.isEmpty()) continue;
+
         s_results.push_back(entry);
     }
 
@@ -194,7 +198,7 @@ void startScan() {
     // picks from the results supersedes it anyway.
     s_nextRetryAt = millis() + 30000;
 
-    WiFi.scanNetworks(true /* async */, true /* show hidden */);
+    WiFi.scanNetworks(true /* async */, false /* skip hidden */);
     LOG_I(TAG, "scanning");
 }
 
