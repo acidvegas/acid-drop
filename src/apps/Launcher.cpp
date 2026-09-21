@@ -83,9 +83,7 @@ String wifiStatus() {
     return net::ssid();
 }
 
-String settingsStatus() {
-    return String(settings::defs().size()) + " options";
-}
+String settingsStatus() { return ""; }
 
 String gpsStatus() {
     if (!gps::enabled()) return "off";

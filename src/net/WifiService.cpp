@@ -17,6 +17,8 @@ namespace {
 constexpr const char* TAG = "wifi";
 
 bool     s_enabled      = false;
+uint32_t s_attemptAt    = 0;    // millis of the last WiFi.begin()
+uint8_t  s_attempts     = 0;    // association attempts for the current target
 bool     s_connected    = false;
 bool     s_scanning     = false;
 bool     s_clockSynced  = false;
@@ -41,6 +43,7 @@ void onWiFiEvent(WiFiEvent_t event) {
     switch (event) {
         case ARDUINO_EVENT_WIFI_STA_GOT_IP:
             s_connected = true;
+            s_attempts  = 0;
             LOG_I(TAG, "connected to %s as %s",
                   WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
             syncClock(true);
@@ -168,6 +171,8 @@ void connect(const String& ssid, const String& password, bool save) {
     }
 
     LOG_I(TAG, "associating with %s", ssid.c_str());
+    s_attempts  = 1;
+    s_attemptAt = millis();
     WiFi.begin(ssid.c_str(), password.isEmpty() ? nullptr : password.c_str());
     s_nextRetryAt = millis() + 20000;
 }
@@ -184,6 +189,11 @@ void startScan() {
 
     s_scanning = true;
     s_results.clear();
+
+    // Hold off the reconnect timer for the duration; whichever network the user
+    // picks from the results supersedes it anyway.
+    s_nextRetryAt = millis() + 30000;
+
     WiFi.scanNetworks(true /* async */, true /* show hidden */);
     LOG_I(TAG, "scanning");
 }
@@ -193,22 +203,64 @@ bool isScanning() { return s_scanning; }
 const std::vector<ScanResult>& scanResults() { return s_results; }
 
 void loop() {
-    if (s_scanning) collectScanResults();
+    // A scan and an association attempt cannot both have the radio. Reassociating
+    // mid-scan aborts the scan and stalls the UI, so the retry timer stands down
+    // until the scan has finished.
+    if (s_scanning) {
+        collectScanResults();
+        return;
+    }
 
     if (!s_enabled || s_connected) return;
+    if (s_nextRetryAt == 0) return;
+    if (static_cast<int32_t>(millis() - s_nextRetryAt) < 0) return;
 
-    // Reassociate on the configured cadence.
-    if (s_nextRetryAt != 0 && static_cast<int32_t>(millis() - s_nextRetryAt) >= 0) {
-        s_nextRetryAt = millis() + settings::getInt("wifi_retry") * 1000UL;
+    // WiFi.begin() is expensive and blocks for a noticeable slice of a frame.
+    // Calling it again while the supplicant is still working on the previous
+    // attempt just restarts it, so the association never converges and the UI
+    // hitches every few seconds. Give each attempt time to actually fail.
+    const uint32_t minimumGap = 12000;
+    if (s_attemptAt != 0 && millis() - s_attemptAt < minimumGap) {
+        s_nextRetryAt = s_attemptAt + minimumGap;
+        return;
+    }
 
-        const String ssid = s_pendingSsid.isEmpty() ? settings::getText("wifi_ssid")
-                                                    : s_pendingSsid;
-        if (ssid.isEmpty()) return;
+    const String ssid = s_pendingSsid.isEmpty() ? settings::getText("wifi_ssid")
+                                                : s_pendingSsid;
+    if (ssid.isEmpty()) return;
 
-        const String pass = s_pendingPassword.isEmpty() ? settings::getText("wifi_pass")
-                                                        : s_pendingPassword;
-        LOG_I(TAG, "retrying %s", ssid.c_str());
-        WiFi.begin(ssid.c_str(), pass.isEmpty() ? nullptr : pass.c_str());
+    const String pass = s_pendingPassword.isEmpty() ? settings::getText("wifi_pass")
+                                                    : s_pendingPassword;
+
+    const uint32_t retryMs = settings::getInt("wifi_retry") * 1000UL;
+    s_attemptAt   = millis();
+    s_nextRetryAt = s_attemptAt + (retryMs > minimumGap ? retryMs : minimumGap);
+
+    if (s_attempts < 255) s_attempts++;
+    LOG_I(TAG, "retrying %s (attempt %u)", ssid.c_str(), s_attempts);
+    WiFi.begin(ssid.c_str(), pass.isEmpty() ? nullptr : pass.c_str());
+}
+
+uint8_t connectAttempts() { return s_attempts; }
+
+void cancelConnect() {
+    LOG_I(TAG, "association cancelled");
+    s_pendingSsid     = "";
+    s_pendingPassword = "";
+    s_nextRetryAt     = 0;
+    s_attempts        = 0;
+    WiFi.disconnect();
+}
+
+String statusText() {
+    switch (WiFi.status()) {
+        case WL_CONNECTED:       return "connected";
+        case WL_NO_SSID_AVAIL:   return "network not found";
+        case WL_CONNECT_FAILED:  return "rejected - check the password";
+        case WL_CONNECTION_LOST: return "connection lost";
+        case WL_IDLE_STATUS:     return "starting";
+        case WL_DISCONNECTED:    return "associating";
+        default:                 return "working";
     }
 }
 
