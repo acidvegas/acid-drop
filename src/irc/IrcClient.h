@@ -188,20 +188,23 @@ private:
     std::vector<std::unique_ptr<IrcBuffer>> m_buffers;
 
     // Cached settings, refreshed by applySettings().
+    // Every field initialised: these are only safe uninitialised because the
+    // client happens to be a global today, and a timer read before
+    // applySettings() would otherwise be indeterminate.
     struct {
-        uint32_t joinDelayMs;
-        uint32_t reconnectDelayS;
-        uint32_t reconnectMaxS;
-        uint32_t kickDelayS;
-        uint32_t lockDelayS;
-        uint32_t pingTimeoutS;
-        bool     autoReconnect;
-        bool     rejoinOnKick;
-        bool     retryFailedJoins;
-        bool     showJoinPart;
-        bool     showModes;
-        bool     showRaw;
-        bool     allowCtcp;
-        uint16_t scrollback;
+        uint32_t joinDelayMs      = 6000;
+        uint32_t reconnectDelayS  = 5;
+        uint32_t reconnectMaxS    = 120;
+        uint32_t kickDelayS       = 3;
+        uint32_t lockDelayS       = 5;
+        uint32_t pingTimeoutS     = 260;
+        bool     autoReconnect    = true;
+        bool     rejoinOnKick     = true;
+        bool     retryFailedJoins = true;
+        bool     showJoinPart     = true;
+        bool     showModes        = true;
+        bool     showRaw          = false;
+        bool     allowCtcp        = true;
+        uint16_t scrollback       = 400;
     } m_cfg;
 };

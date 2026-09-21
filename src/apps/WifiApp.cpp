@@ -106,10 +106,10 @@ void askForPassword(const String& ssid, bool secured) {
 
     lv_obj_add_event_cb(join, [](lv_event_t*) {
         const String password(lv_textarea_get_text(s_field));
-        const String ssid = s_pendingSsid;
+        const String target = s_pendingSsid;
         closePrompt();
-        net::connect(ssid, password, true);
-        showConnectDialog(ssid);
+        net::connect(target, password, true);
+        showConnectDialog(target);
     }, LV_EVENT_CLICKED, nullptr);
 }
 
