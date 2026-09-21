@@ -3,12 +3,13 @@
 #include <LovyanGFX.hpp>
 #include <lvgl.h>
 
-// LovyanGFX device for the T-Deck's ST7789 panel.
+// LovyanGFX device for the T-Deck's ST7789 panel and its GT911 touch panel.
 //
-// Touch is deliberately NOT configured here. LovyanGFX would initialise the
-// I2C peripheral itself, and the keyboard already owns that port and those
-// pins through Wire; two owners means one of them stops working. See
-// board/Touch.h.
+// LovyanGFX owns I2C port 0 and applies the display rotation to touch
+// coordinates itself. Everything else on that bus - the keyboard, the boot
+// recovery key - goes through lgfx::i2c rather than Arduino's Wire, because
+// only one driver can own a port and a second owner does not fail loudly: it
+// just makes the other side's transactions time out.
 class AcidLGFX : public lgfx::LGFX_Device {
 public:
     AcidLGFX();
