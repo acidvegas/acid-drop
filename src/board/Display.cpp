@@ -1,6 +1,7 @@
 #include "board/Display.h"
 
 #include <Arduino.h>
+#include <Wire.h>
 #include <esp_heap_caps.h>
 
 #include "board/pins.h"
@@ -78,6 +79,12 @@ AcidLGFX::AcidLGFX() {
     setPanel(&_panel);
 }
 
+void AcidLGFX::setTouchAddress(uint8_t address) {
+    auto cfg = _touch.config();
+    cfg.i2c_addr = address;
+    _touch.config(cfg);
+}
+
 namespace display {
 namespace {
 
@@ -110,7 +117,30 @@ uint32_t tickCb() {
 
 } // namespace
 
+namespace {
+
+// Probes both addresses the GT911 is strapped to in the wild. Returns 0 when
+// neither answers, in which case we leave the default and carry on without
+// touch rather than refusing to boot.
+uint8_t probeTouchAddress() {
+    for (uint8_t address : {TOUCH_I2C_ADDR_PRI, TOUCH_I2C_ADDR_ALT}) {
+        Wire.beginTransmission(address);
+        if (Wire.endTransmission() == 0) return address;
+    }
+    return 0;
+}
+
+} // namespace
+
 bool begin() {
+    const uint8_t touchAddress = probeTouchAddress();
+    if (touchAddress != 0) {
+        gfx.setTouchAddress(touchAddress);
+        LOG_I("display", "GT911 found at 0x%02X", touchAddress);
+    } else {
+        LOG_W("display", "no touch controller answered; touch will not work");
+    }
+
     if (!gfx.init()) {
         LOG_E("display", "panel init failed");
         return false;
