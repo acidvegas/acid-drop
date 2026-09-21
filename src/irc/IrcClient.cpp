@@ -1106,12 +1106,17 @@ void IrcClient::queueConfiguredChannels() {
         channel.retryCount   = 0;
     }
 
-    // Anything we were in before the drop gets rejoined too, whether or not it
-    // is on the autojoin list - losing the link should not lose your windows.
+    // Rejoin channels we were in before a drop - but only ones that are on the
+    // saved list. A buffer can exist for a channel we never asked for, because
+    // a TOPIC or NAMES numeric creates one, and re-arming those was undoing
+    // the part of a channel the server had forced us into.
     for (auto& buffer : m_buffers) {
-        if (buffer->isChannel() && !buffer->joined && buffer->retryAt == 0) {
-            buffer->retryAt = millis();
-        }
+        if (!buffer->isChannel() || buffer->joined || buffer->retryAt != 0) continue;
+
+        const IrcChannelConfig* saved = channels::find(buffer->name);
+        if (saved == nullptr || !saved->autojoin) continue;
+
+        buffer->retryAt = millis();
     }
 
     if (onBufferListChanged) onBufferListChanged();

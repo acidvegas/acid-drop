@@ -447,7 +447,8 @@ void create(lv_obj_t* parent) {
     // Extra room at the top so the first row of text is not flush against the
     // header bar above it.
     lv_obj_set_style_pad_all(viewHost, 2, 0);
-    lv_obj_set_style_pad_top(viewHost, 5, 0);
+    lv_obj_set_style_pad_top(viewHost, 4, 0);
+    lv_obj_set_style_pad_bottom(viewHost, 0, 0);
     lv_obj_set_scrollable(viewHost, false);
 
     s_view.create(viewHost);
