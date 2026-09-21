@@ -21,6 +21,8 @@ lv_obj_t* s_tabs   = nullptr;
 lv_obj_t* s_input  = nullptr;
 lv_obj_t* s_reconnectLabel  = nullptr;
 lv_obj_t* s_reconnectButton = nullptr;
+lv_obj_t* s_tabRow          = nullptr;
+lv_obj_t* s_barToggleLabel  = nullptr;
 lv_obj_t* s_infoPanel      = nullptr;
 lv_obj_t* s_infoBody       = nullptr;
 TermView  s_view;
@@ -245,6 +247,16 @@ void openInfoPanel() {
     refreshInfoPanel();
 }
 
+// Hiding the header reflows the column, and LVGL's flex layout skips hidden
+// children, so the message view simply grows into the space.
+void applyTopBar() {
+    const bool show = settings::getBool("irc_topbar");
+    if (s_tabRow) lv_obj_set_hidden(s_tabRow, !show);
+    if (s_barToggleLabel) {
+        lv_label_set_text(s_barToggleLabel, show ? LV_SYMBOL_UP : LV_SYMBOL_DOWN);
+    }
+}
+
 void selectRelative(int delta) {
     const size_t count = ui::irc().bufferCount();
     if (count == 0) return;
@@ -372,6 +384,7 @@ void create(lv_obj_t* parent) {
     // filling whatever is left. Children are created in that order, which is
     // the order flex lays them out.
     lv_obj_t* tabRow = lv_obj_create(s_page);
+    s_tabRow = tabRow;
     lv_obj_remove_style_all(tabRow);
     lv_obj_set_size(tabRow, LV_PCT(100), 30);
     lv_obj_set_flex_flow(tabRow, LV_FLEX_FLOW_ROW);
@@ -455,8 +468,39 @@ void create(lv_obj_t* parent) {
     applySettings();
 
     // Input line.
-    s_input = lv_textarea_create(s_page);
-    lv_obj_set_size(s_input, LV_PCT(100), 30);
+    // Input row: the bar toggle sits beside the text field so the header can be
+    // dropped for two more lines of backlog without leaving the keyboard.
+    lv_obj_t* inputRow = lv_obj_create(s_page);
+    lv_obj_remove_style_all(inputRow);
+    lv_obj_set_size(inputRow, LV_PCT(100), 30);
+    lv_obj_set_flex_flow(inputRow, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(inputRow, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(inputRow, 2, 0);
+    lv_obj_set_scrollable(inputRow, false);
+
+    lv_obj_t* barToggle = lv_obj_create(inputRow);
+    lv_obj_remove_style_all(barToggle);
+    lv_obj_set_size(barToggle, 28, 28);
+    lv_obj_set_clickable(barToggle, true);
+    lv_obj_set_scrollable(barToggle, false);
+    lv_obj_set_style_bg_color(barToggle, lv_color_hex(theme::kSurfaceAlt), 0);
+    lv_obj_set_style_bg_opa(barToggle, LV_OPA_COVER, 0);
+    lv_group_add_obj(input::group(), barToggle);
+
+    s_barToggleLabel = lv_label_create(barToggle);
+    lv_obj_set_style_text_font(s_barToggleLabel, theme::uiFontSmall(), 0);
+    lv_obj_set_style_text_color(s_barToggleLabel, theme::textDim(), 0);
+    lv_obj_center(s_barToggleLabel);
+
+    lv_obj_add_event_cb(barToggle, [](lv_event_t*) {
+        settings::setBool("irc_topbar", !settings::getBool("irc_topbar"));
+        applyTopBar();
+    }, LV_EVENT_CLICKED, nullptr);
+
+    s_input = lv_textarea_create(inputRow);
+    lv_obj_set_height(s_input, 30);
+    lv_obj_set_flex_grow(s_input, 1);
     lv_textarea_set_one_line(s_input, true);
     lv_textarea_set_placeholder_text(s_input, "message or /command");
     lv_textarea_set_max_length(s_input, 400);
@@ -470,6 +514,8 @@ void create(lv_obj_t* parent) {
 
     lv_group_add_obj(input::group(), s_input);
     lv_group_focus_obj(s_input);
+
+    applyTopBar();
 
     s_alive = true;
     input::setKeyHook(keyHook);
@@ -490,6 +536,8 @@ void destroy() {
     s_input = nullptr;
     s_reconnectLabel  = nullptr;
     s_reconnectButton = nullptr;
+    s_tabRow          = nullptr;
+    s_barToggleLabel  = nullptr;
     s_tabButtons.clear();
 }
 
