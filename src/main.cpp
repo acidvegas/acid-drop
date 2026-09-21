@@ -106,6 +106,7 @@ void setup() {
 
     settings::begin();
     logging::setLevel(static_cast<LogLevel>(settings::getEnum("log_level")));
+    logging::setKeepHistory(settings::getBool("log_screen"));
 
     if (!display::begin()) {
         LOG_E(TAG, "display init failed - halting");

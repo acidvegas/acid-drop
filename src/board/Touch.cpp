@@ -15,6 +15,7 @@ constexpr uint16_t kRegStatus = 0x814E;
 constexpr uint16_t kRegPoint0 = 0x8150;
 
 uint8_t s_address = 0;
+bool    s_flipped = false;
 
 bool writeRegister(uint16_t reg, uint8_t value) {
     Wire.beginTransmission(s_address);
@@ -56,6 +57,8 @@ bool begin() {
     return false;
 }
 
+void setFlipped(bool flipped) { s_flipped = flipped; }
+
 bool present()    { return s_address != 0; }
 uint8_t address() { return s_address; }
 
@@ -80,8 +83,13 @@ bool read(int16_t& x, int16_t& y) {
 
             // The panel reports in its native portrait orientation (240x320)
             // while the UI runs landscape, so rotate a quarter turn here.
-            x = static_cast<int16_t>(rawY);
-            y = static_cast<int16_t>((BOARD_TFT_HEIGHT - 1) - rawX);
+            if (s_flipped) {
+                x = static_cast<int16_t>((BOARD_TFT_WIDTH - 1) - rawY);
+                y = static_cast<int16_t>(rawX);
+            } else {
+                x = static_cast<int16_t>(rawY);
+                y = static_cast<int16_t>((BOARD_TFT_HEIGHT - 1) - rawX);
+            }
 
             if (x < 0) x = 0;
             if (y < 0) y = 0;

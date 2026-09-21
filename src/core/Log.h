@@ -24,6 +24,9 @@ namespace logging {
 
 void begin(unsigned long baud);
 void setLevel(LogLevel level);
+
+// Whether to keep the ring buffer the on-device syslog reads from.
+void setKeepHistory(bool keep);
 LogLevel level();
 
 void write(LogLevel level, const char* tag, const char* fmt, ...);

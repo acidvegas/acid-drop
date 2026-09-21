@@ -2,6 +2,7 @@
 
 #include <Wire.h>
 
+#include "board/Audio.h"
 #include "board/Display.h"
 #include "board/Touch.h"
 #include "board/pins.h"
@@ -103,6 +104,7 @@ void pollKeyboard() {
 
     s_keys.push(translateKeyboard(static_cast<char>(raw)));
     noteActivity();
+    audio::alert(Alert::Key);   // no-op unless "Key clicks" is on
 }
 
 // --- LVGL callbacks -------------------------------------------------------

@@ -2,6 +2,7 @@
 
 #include <esp32-hal-cpu.h>
 
+#include "board/Audio.h"
 #include "board/Display.h"
 #include "board/Input.h"
 #include "board/pins.h"
@@ -88,6 +89,7 @@ void loop() {
             if (!s_lowWarned) {
                 s_lowWarned = true;
                 LOG_W(TAG, "battery low: %u%%", percent);
+                audio::alert(Alert::LowBattery);
             }
         } else if (percent > warnAt + 5) {
             s_lowWarned = false;
