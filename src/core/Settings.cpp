@@ -61,7 +61,7 @@ const std::vector<SettingDef> kDefs = {
     DEF_INT("dim_secs",    "Display", "Dim after",        "Seconds of inactivity before dimming. 0 disables.", 0, 600, 5, "s", 20),
     DEF_INT("off_secs",    "Display", "Screen off after", "Seconds of inactivity before the backlight goes out. 0 disables.", 0, 1800, 10, "s", 60),
     DEF_INT("dim_level",   "Display", "Dim level",        nullptr, 1, 128, 1, nullptr, 25),
-    DEF_ENUM("rotation",    "Display", "Orientation",      nullptr, kOptRotation, 0),
+    DEF_ENUM("rotation",    "Display", "Orientation",      "Takes effect after a restart", kOptRotation, 0),
     DEF_ENUM("term_font",   "Display", "Chat font size",   "The message grid is sized from this", kOptTermFont, 0),
     DEF_INT("term_linesp", "Display", "Line spacing",     "Pixels between chat rows. Negative packs more lines on screen.", -6, 8, 1, "px", 0),
     DEF_BOOL("sb_seconds",  "Display", "Seconds in clock", "Show seconds in the status bar", 0),

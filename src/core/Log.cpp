@@ -10,6 +10,7 @@ constexpr size_t kMaxEntries = 250;
 LogLevel              s_level = LogLevel::Info;
 std::vector<LogEntry> s_entries;
 void                (*s_cb)(const LogEntry&) = nullptr;
+bool                  s_keepHistory = true;
 
 const char* levelName(LogLevel level) {
     switch (level) {
@@ -38,6 +39,11 @@ void begin(unsigned long baud) {
 }
 
 void setLevel(LogLevel level) { s_level = level; }
+
+void setKeepHistory(bool keep) {
+    s_keepHistory = keep;
+    if (!keep) s_entries.clear();
+}
 LogLevel level() { return s_level; }
 
 void write(LogLevel level, const char* tag, const char* fmt, ...) {
@@ -65,6 +71,10 @@ void write(LogLevel level, const char* tag, const char* fmt, ...) {
 
     Serial.printf("[%8lu][%s][%s] %s\n",
                   static_cast<unsigned long>(entry.ms), levelName(level), tag, message.c_str());
+
+    // The on-screen syslog is what the history is for; with it off there is no
+    // reason to hold a few hundred Strings in RAM.
+    if (!s_keepHistory) return;
 
     if (s_entries.size() >= kMaxEntries) s_entries.erase(s_entries.begin());
     s_entries.push_back(entry);

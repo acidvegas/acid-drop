@@ -5,7 +5,9 @@
 #include <esp_heap_caps.h>
 
 #include "board/pins.h"
+#include "board/Touch.h"
 #include "core/Log.h"
+#include "core/Settings.h"
 
 AcidLGFX gfx;
 
@@ -102,7 +104,10 @@ bool begin() {
         return false;
     }
 
-    gfx.setRotation(1);
+    // "Upside down" is the same landscape axis rotated a half turn.
+    const bool flipped = settings::getEnum("rotation") == 1;
+    gfx.setRotation(flipped ? 3 : 1);
+    touch::setFlipped(flipped);
     gfx.setBrightness(0);   // Stay dark until the first frame is drawn
     gfx.fillScreen(0x0000);
 

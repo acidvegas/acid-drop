@@ -22,4 +22,7 @@ uint8_t address();
 // Screen coordinates, already mapped for the display's rotation.
 bool read(int16_t& x, int16_t& y);
 
+// Mirrors the mapping when the display is mounted upside down.
+void setFlipped(bool flipped);
+
 } // namespace touch

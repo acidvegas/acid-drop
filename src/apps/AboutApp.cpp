@@ -6,6 +6,7 @@
 #include "board/Gps.h"
 #include "board/Input.h"
 #include "board/Power.h"
+#include "core/Log.h"
 #include "core/Settings.h"
 #include "irc/IrcClient.h"
 #include "net/WifiService.h"
@@ -115,6 +116,15 @@ void tick() {
             (settings::getBool("irc_tls") ? " (TLS)" : "") + "\n";
     text += "Nick      " + ui::irc().nick() + "\n";
     text += "Windows   " + String(ui::irc().bufferCount()) + "\n";
+
+    if (settings::getBool("dev_mode")) {
+        text += "\nDeveloper\n";
+        text += "Free heap  " + formatBytes(ESP.getFreeHeap()) + "\n";
+        text += "Min free   " + formatBytes(ESP.getMinFreeHeap()) + "\n";
+        text += "Largest    " + formatBytes(ESP.getMaxAllocHeap()) + "\n";
+        text += "Free PSRAM " + formatBytes(ESP.getFreePsram()) + "\n";
+        text += "Log lines  " + String(logging::entries().size()) + "\n";
+    }
 
     lv_label_set_text(s_body, text.c_str());
 }

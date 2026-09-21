@@ -140,8 +140,12 @@ void tick() {
     setIconState(s_wifi, net::isConnected(), theme::signalColor(net::quality()));
     setIconState(s_ble,  ble::enabled(),
                  ble::connected() ? theme::accent() : lv_color_hex(theme::kInfo));
-    setIconState(s_gps,  gps::enabled(),
-                 gps::hasFix() ? theme::accent() : lv_color_hex(theme::kWarning));
+    const bool showGps = settings::getBool("gps_statbar");
+    lv_obj_set_hidden(s_gps, !showGps);
+    if (showGps) {
+        setIconState(s_gps, gps::enabled(),
+                     gps::hasFix() ? theme::accent() : lv_color_hex(theme::kWarning));
+    }
 
     const bool sound = audio::enabled() && settings::getInt("snd_volume") > 0;
     lv_label_set_text(s_sound, sound ? LV_SYMBOL_VOLUME_MAX : LV_SYMBOL_MUTE);
