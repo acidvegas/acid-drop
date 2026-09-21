@@ -313,10 +313,21 @@ bool keyHook(uint32_t key) {
     if (!s_alive) return false;
 
     switch (key) {
+        // Tab steps focus through the header buttons and back to the input,
+        // so they can be reached without touch.
+        case LV_KEY_NEXT:
+        case LV_KEY_PREV:
+            return false;
+
         case LV_KEY_UP:
+            // Once scrolled to the top, hand the key back so focus can move to
+            // the header rather than the view swallowing it forever.
+            if (s_view.atTop()) return false;
             s_view.scrollRows(1);
             return true;
+
         case LV_KEY_DOWN:
+            if (s_view.atBottom()) return false;
             s_view.scrollRows(-1);
             return true;
 

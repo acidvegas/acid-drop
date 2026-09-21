@@ -245,6 +245,12 @@ void TermView::scrollPageDown() { scrollRows(-(m_visibleRows > 1 ? m_visibleRows
 
 bool TermView::atBottom() const { return !m_doc || m_doc->stickToBottom; }
 
+bool TermView::atTop() const {
+    // collectVisibleRows() clamps scrollBack to the oldest row it can reach, so
+    // asking again after a draw tells us whether we are pinned there.
+    return !m_doc || m_doc->scrollBack == m_atTopScrollBack;
+}
+
 // --- wrapping -------------------------------------------------------------
 
 uint8_t TermView::timestampWidth() const {
@@ -314,6 +320,9 @@ void TermView::collectVisibleRows(std::vector<RowRef>& out) {
         const int32_t maxScroll = static_cast<int32_t>(out.size()) - m_visibleRows;
         m_doc->scrollBack    = maxScroll > 0 ? maxScroll : 0;
         m_doc->stickToBottom = m_doc->scrollBack == 0;
+        m_atTopScrollBack    = m_doc->scrollBack;
+    } else {
+        m_atTopScrollBack    = -1;
     }
 }
 

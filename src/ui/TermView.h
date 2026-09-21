@@ -77,6 +77,7 @@ public:
     void scrollPageUp();
     void scrollPageDown();
     bool atBottom() const;
+    bool atTop() const;      // nothing older left to scroll to
 
     void refresh();                              // re-wrap and redraw
 
@@ -111,6 +112,9 @@ private:
     int8_t   m_lineSpacing = 0;
     uint16_t m_columns     = 40;
     uint16_t m_visibleRows = 12;
+
+    // Scroll position at which the buffer ran out, or -1 when it did not.
+    mutable int32_t m_atTopScrollBack = -1;
 
     uint8_t       m_timestampMode = 1;
     bool          m_wordWrap      = true;

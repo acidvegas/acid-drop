@@ -23,6 +23,7 @@ constexpr const char* TAG        = "settings";
 const char* const kOptOnOffAuto[]   = {"Off", "On", "Auto", nullptr};
 const char* const kOptBootApp[]     = {"Launcher", "IRC", "Last used", nullptr};
 const char* const kOptRotation[]    = {"Normal", "Upside down", nullptr};
+const char* const kOptTouchMap[]    = {"A (default)", "B", "C", "D", nullptr};
 const char* const kOptTermFont[]    = {"Small (6x14)", "Large (9x20)", nullptr};
 const char* const kOptTimestamp[]   = {"None", "HH:MM", "HH:MM:SS", nullptr};
 const char* const kOptCpuMhz[]      = {"80 MHz", "160 MHz", "240 MHz", nullptr};
@@ -61,6 +62,7 @@ const std::vector<SettingDef> kDefs = {
     DEF_INT("dim_secs",    "Display", "Dim after",        "Seconds of inactivity before dimming. 0 disables.", 0, 600, 5, "s", 20),
     DEF_INT("off_secs",    "Display", "Screen off after", "Seconds of inactivity before the backlight goes out. 0 disables.", 0, 1800, 10, "s", 60),
     DEF_INT("dim_level",   "Display", "Dim level",        nullptr, 1, 128, 1, nullptr, 25),
+    DEF_ENUM("touch_map",   "Display", "Touch mapping",    "Change this if taps land in the wrong place", kOptTouchMap, 0),
     DEF_ENUM("rotation",    "Display", "Orientation",      "Takes effect after a restart", kOptRotation, 0),
     DEF_ENUM("term_font",   "Display", "Chat font size",   "The message grid is sized from this", kOptTermFont, 0),
     DEF_INT("term_linesp", "Display", "Line spacing",     "Pixels between chat rows. Negative packs more lines on screen.", -6, 8, 1, "px", 0),
