@@ -32,6 +32,14 @@ void write(LogLevel level, const char* tag, const char* fmt, ...);
 const std::vector<LogEntry>& entries();
 void clear();
 
+// Re-prints the whole ring buffer to serial.
+//
+// The S3 talks over USB-CDC, which throws output away whenever it thinks no
+// terminal is attached - so everything logged during boot is lost unless a
+// monitor happened to be connected at the time, and attaching one tends to
+// reset the board. Calling this when a host turns up replays what was missed.
+void replay();
+
 // Called whenever a line is appended, so the syslog app can refresh.
 void onAppend(void (*cb)(const LogEntry&));
 
