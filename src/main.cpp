@@ -145,6 +145,8 @@ void setup() {
         delay(5);
     }
 
+    LOG_I(TAG, "splash held %lu ms", (unsigned long)(millis() - s_logoShownAt));
+
     bootStage("ui");
     ui::begin();
 

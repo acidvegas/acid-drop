@@ -37,6 +37,9 @@ uint8_t connectAttempts();
 void    cancelConnect();
 String  statusText();
 
+// Why the last association attempt failed, empty when there has not been one.
+String  lastError();
+
 void    startScan();
 bool    isScanning();
 const std::vector<ScanResult>& scanResults();
