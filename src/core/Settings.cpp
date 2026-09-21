@@ -127,6 +127,7 @@ const std::vector<SettingDef> kDefs = {
     DEF_BOOL("irc_format",  "Appearance", "Bold/italic/underline", "Render ^B ^] ^_ and reverse video", 1),
     DEF_ENUM("irc_nickcol", "Appearance", "Nick colors",   "Hashed keeps a nick the same colour every session", kOptNickColor, 1),
     DEF_ENUM("irc_ts",      "Appearance", "Timestamps",    nullptr, kOptTimestamp, 1),
+    DEF_BOOL("irc_topbar",  "Appearance", "Show the top bar", "The toggle in the input row also sets this", 1),
     DEF_BOOL("irc_joinpart","Appearance", "Show joins/parts", nullptr, 1),
     DEF_BOOL("irc_showmode","Appearance", "Show mode changes", nullptr, 1),
     DEF_BOOL("irc_showraw", "Appearance", "Raw server lines", "Mirror everything into the status window. Costs memory on a busy server.", 0),
