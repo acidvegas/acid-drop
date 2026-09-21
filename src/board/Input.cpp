@@ -133,8 +133,11 @@ void keypadReadCb(lv_indev_t* indev, lv_indev_data_t* data) {
 
     uint32_t key = s_keys.pop();
 
-    // Give the active app first refusal.
-    if (s_hook && s_hook(key)) {
+    // Copied before the call: a hook that switches apps tears down the app
+    // that installed it, which clears s_hook - destroying the callable while
+    // its own invocation is still on the stack.
+    KeyHook hook = s_hook;
+    if (hook && hook(key)) {
         data->key   = 0;
         data->state = LV_INDEV_STATE_RELEASED;
         data->continue_reading = !s_keys.empty();
@@ -278,7 +281,8 @@ void loop() {
         holdFired = true;
         noteActivity();
         LOG_I(TAG, "trackball held (handler %s)", s_holdHandler ? "set" : "MISSING");
-        if (s_holdHandler) s_holdHandler();
+        auto handler = s_holdHandler;   // same reason as the key hook
+        if (handler) handler();
     }
 }
 

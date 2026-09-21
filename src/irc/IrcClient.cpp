@@ -122,15 +122,9 @@ void connectTask(void* arg) {
 
     const bool ok = socket->connect(job->host.c_str(), job->port);
 
-    if (job->abandoned) {
-        // Nobody is waiting for this any more, so clean up here.
-        socket->stop();
-        delete socket;
-        delete job;
-        vTaskDelete(nullptr);
-        return;
-    }
-
+    // Publish and exit. The task never frees the job or the socket: the client
+    // owns both, and splitting that ownership across two threads left the job
+    // leaked whenever the task finished just before it was abandoned.
     job->socket = socket;
     job->ok     = ok;
     job->done   = true;
@@ -230,9 +224,11 @@ void IrcClient::connect() {
 }
 
 void IrcClient::disconnect(const String& quitMessage, bool stayOffline) {
-    // Hand any in-flight connect over to its own task to clean up.
+    // Stop waiting for an attempt in flight, but keep hold of it: the task is
+    // still writing to it and only this thread frees anything.
     if (m_job != nullptr) {
         static_cast<ConnectJob*>(m_job)->abandoned = true;
+        m_orphanedJobs.push_back(m_job);
         m_job = nullptr;
     }
 
@@ -300,6 +296,24 @@ void IrcClient::startConnect() {
     }
 }
 
+void IrcClient::reapOrphanedJobs() {
+    for (size_t i = 0; i < m_orphanedJobs.size();) {
+        auto* job = static_cast<ConnectJob*>(m_orphanedJobs[i]);
+        if (!job->done) {
+            i++;                       // still running; look again next pass
+            continue;
+        }
+
+        if (job->socket) {
+            job->socket->stop();
+            delete job->socket;
+        }
+        delete job;
+        m_orphanedJobs.erase(m_orphanedJobs.begin() + i);
+        LOG_D(TAG, "reaped an abandoned connect attempt");
+    }
+}
+
 void IrcClient::pollConnect() {
     auto* job = static_cast<ConnectJob*>(m_job);
     if (job == nullptr) {
@@ -311,6 +325,7 @@ void IrcClient::pollConnect() {
         if (millis() - m_connectStartedAt > 30000UL) {
             LOG_W(TAG, "connect task overran, abandoning it");
             job->abandoned = true;
+            m_orphanedJobs.push_back(m_job);
             m_job = nullptr;
             scheduleReconnect();
         }
@@ -410,6 +425,9 @@ void IrcClient::scheduleReconnect() {
 
 void IrcClient::loop() {
     const uint32_t now = millis();
+
+    // Free anything left over from attempts we stopped waiting for.
+    if (!m_orphanedJobs.empty()) reapOrphanedJobs();
 
     if (!m_wantConnection) return;
 
