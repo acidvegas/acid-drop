@@ -7,6 +7,7 @@
 #include "apps/Launcher.h"
 #include "apps/SettingsApp.h"
 #include "apps/SyslogApp.h"
+#include "apps/TouchCalibApp.h"
 #include "apps/WifiApp.h"
 #include "board/Audio.h"
 #include "board/Input.h"
@@ -48,6 +49,8 @@ AppHooks hooksFor(AppId id) {
         case AppId::Settings:    return {settingsapp::create,  settingsapp::destroy, settingsapp::tick};
         case AppId::Wifi:        return {wifiapp::create,      wifiapp::destroy,     wifiapp::tick};
         case AppId::Gps:         return {gpsapp::create,       gpsapp::destroy,      gpsapp::tick};
+        case AppId::TouchCalibration:
+                                 return {touchcalib::create,  touchcalib::destroy,  touchcalib::tick};
         case AppId::Syslog:      return {syslogapp::create,    syslogapp::destroy,   syslogapp::tick};
         case AppId::About:       return {aboutapp::create,     aboutapp::destroy,    aboutapp::tick};
         case AppId::Launcher:

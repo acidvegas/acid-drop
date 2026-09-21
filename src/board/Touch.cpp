@@ -58,6 +58,52 @@ bool begin() {
     return false;
 }
 
+void applyMapping(uint8_t index, uint16_t rawX, uint16_t rawY, int16_t& x, int16_t& y) {
+    // The controller reports in the panel's native portrait frame. Which
+    // quarter turn maps that onto the landscape UI depends on how the panel is
+    // mounted, and it is measured by the calibration screen rather than
+    // assumed here.
+    switch (index) {
+        case 1:
+            x = static_cast<int16_t>((BOARD_TFT_WIDTH - 1) - rawY);
+            y = static_cast<int16_t>(rawX);
+            break;
+        case 2:
+            x = static_cast<int16_t>(rawY);
+            y = static_cast<int16_t>(rawX);
+            break;
+        case 3:
+            x = static_cast<int16_t>((BOARD_TFT_WIDTH - 1) - rawY);
+            y = static_cast<int16_t>((BOARD_TFT_HEIGHT - 1) - rawX);
+            break;
+        default:
+            x = static_cast<int16_t>(rawY);
+            y = static_cast<int16_t>((BOARD_TFT_HEIGHT - 1) - rawX);
+            break;
+    }
+}
+
+bool readRaw(uint16_t& rawX, uint16_t& rawY) {
+    if (s_address == 0) return false;
+
+    uint8_t status = 0;
+    if (!readRegisters(kRegStatus, &status, 1)) return false;
+    if (!(status & 0x80)) return false;
+
+    bool got = false;
+    if ((status & 0x0F) > 0) {
+        uint8_t point[8];
+        if (readRegisters(kRegPoint0, point, sizeof(point))) {
+            rawX = static_cast<uint16_t>(point[1]) | (static_cast<uint16_t>(point[2]) << 8);
+            rawY = static_cast<uint16_t>(point[3]) | (static_cast<uint16_t>(point[4]) << 8);
+            got = true;
+        }
+    }
+
+    writeRegister(kRegStatus, 0);
+    return got;
+}
+
 void setFlipped(bool flipped) { s_flipped = flipped; }
 
 bool present()    { return s_address != 0; }
@@ -84,29 +130,7 @@ bool read(int16_t& x, int16_t& y) {
 
             // The panel reports in its native portrait orientation (240x320)
             // while the UI runs landscape, so rotate a quarter turn here.
-            // The controller reports in the panel's native portrait frame. Which
-            // quarter turn maps that onto the landscape UI depends on how the
-            // panel is mounted, so it is a setting rather than a guess: if taps
-            // land in the wrong place, change Display > Touch mapping.
-            const uint8_t mapping = settings::getEnum("touch_map");
-            switch (mapping) {
-                case 1:
-                    x = static_cast<int16_t>((BOARD_TFT_WIDTH - 1) - rawY);
-                    y = static_cast<int16_t>(rawX);
-                    break;
-                case 2:
-                    x = static_cast<int16_t>(rawY);
-                    y = static_cast<int16_t>(rawX);
-                    break;
-                case 3:
-                    x = static_cast<int16_t>((BOARD_TFT_WIDTH - 1) - rawY);
-                    y = static_cast<int16_t>((BOARD_TFT_HEIGHT - 1) - rawX);
-                    break;
-                default:
-                    x = static_cast<int16_t>(rawY);
-                    y = static_cast<int16_t>((BOARD_TFT_HEIGHT - 1) - rawX);
-                    break;
-            }
+            applyMapping(settings::getEnum("touch_map"), rawX, rawY, x, y);
 
             if (s_flipped) {
                 x = static_cast<int16_t>((BOARD_TFT_WIDTH - 1) - x);

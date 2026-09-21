@@ -424,6 +424,12 @@ void showSection(const String& section) {
 
     lv_obj_clean(s_list);
 
+    if (section == "Display") {
+        addShortcutRow(LV_SYMBOL_EDIT "  Calibrate touch",
+                       "Tap a target so the orientation is measured, not assumed",
+                       [] { ui::openApp(ui::AppId::TouchCalibration); });
+    }
+
     // Typing an SSID by hand is miserable, so offer the scanner right here.
     if (section == "WiFi") {
         addShortcutRow(LV_SYMBOL_REFRESH "  Scan for networks",
