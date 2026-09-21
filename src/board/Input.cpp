@@ -173,7 +173,10 @@ void pointerReadCb(lv_indev_t* indev, lv_indev_data_t* data) {
 
 void begin() {
     s_group = lv_group_create();
-    lv_group_set_default(s_group);
+    // Deliberately NOT lv_group_set_default(): that auto-adds every focusable
+    // widget anyone creates, including the quick-settings sliders and toast
+    // buttons living on the top layer. Trackball focus would then walk off the
+    // current screen into invisible controls. Screens add their own widgets.
 
     s_keypad = lv_indev_create();
     lv_indev_set_type(s_keypad, LV_INDEV_TYPE_KEYPAD);

@@ -86,6 +86,8 @@ void IrcClient::begin() {
 }
 
 void IrcClient::applySettings() {
+    // Logged because these values drive every timer in the client, and a wrong
+    // one looks like a network fault rather than a configuration problem.
     m_cfg.joinDelayMs      = settings::getInt("irc_joindly");
     m_cfg.reconnectDelayS  = settings::getInt("irc_recondly");
     m_cfg.reconnectMaxS    = settings::getInt("irc_reconmax");
@@ -102,6 +104,11 @@ void IrcClient::applySettings() {
     m_cfg.scrollback       = settings::getInt("irc_scrollbk");
 
     for (auto& buffer : m_buffers) buffer->doc.setMaxLines(m_cfg.scrollback);
+
+    LOG_I(TAG, "timers: join=%lums recon=%lus max=%lus kick=%lus lock=%lus ping=%lus",
+          (unsigned long)m_cfg.joinDelayMs, (unsigned long)m_cfg.reconnectDelayS,
+          (unsigned long)m_cfg.reconnectMaxS, (unsigned long)m_cfg.kickDelayS,
+          (unsigned long)m_cfg.lockDelayS, (unsigned long)m_cfg.pingTimeoutS);
 }
 
 void IrcClient::setState(IrcState next) {
@@ -191,11 +198,12 @@ void IrcClient::openSocket() {
         } else {
             secure->setInsecure();
         }
-        secure->setTimeout(15);
+        secure->setHandshakeTimeout(8);
+        secure->setTimeout(8);
         m_socket.reset(secure);
     } else {
         auto* plain = new WiFiClient();
-        plain->setTimeout(15);
+        plain->setTimeout(8);
         m_socket.reset(plain);
     }
 
@@ -308,6 +316,9 @@ void IrcClient::loop() {
     if (m_state >= IrcState::Registering && m_cfg.pingTimeoutS > 0) {
         const uint32_t silence = now - m_lastServerLine;
         if (silence > m_cfg.pingTimeoutS * 1000UL) {
+            LOG_W(TAG, "ping timeout: silence=%lu limit=%lu lastLine=%lu now=%lu",
+                  (unsigned long)silence, (unsigned long)(m_cfg.pingTimeoutS * 1000UL),
+                  (unsigned long)m_lastServerLine, (unsigned long)now);
             onDisconnected("ping timeout");
         } else if (silence > (m_cfg.pingTimeoutS * 1000UL) / 2 &&
                    now - m_lastPingSent > 30000UL) {
