@@ -17,6 +17,7 @@ lv_indev_t* s_pointer = nullptr;
 lv_group_t* s_group   = nullptr;
 
 KeyHook  s_hook;
+std::function<void()> s_holdHandler;
 uint32_t s_lastActivity = 0;
 uint32_t s_readyAt      = 0;   // ignore input until the pins have settled
 uint8_t  s_ballDivisor  = 2;
@@ -232,11 +233,27 @@ void loop() {
     drainAxis(s_ballLeft,  LV_KEY_LEFT);
     drainAxis(s_ballRight, LV_KEY_RIGHT);
 
+    // A tap selects; a hold is the way back to the launcher, since the T-Deck
+    // keyboard has no escape key and not every screen has room for a button.
+    static uint32_t clickStartedAt = 0;
+    static bool     holdFired      = false;
+    constexpr uint32_t kHoldMs = 600;
+
     const bool click = digitalRead(BOARD_TRACKBALL_CLICK) == LOW;
+
     if (click && !lastClick) {
+        clickStartedAt = now;
+        holdFired      = false;
+        noteActivity();
+    } else if (click && !holdFired && now - clickStartedAt >= kHoldMs) {
+        holdFired = true;
+        noteActivity();
+        if (s_holdHandler) s_holdHandler();
+    } else if (!click && lastClick && !holdFired) {
         s_keys.push(LV_KEY_ENTER);
         noteActivity();
     }
+
     lastClick = click;
 }
 
@@ -245,6 +262,7 @@ lv_indev_t* pointer() { return s_pointer; }
 lv_group_t* group()   { return s_group; }
 
 void setKeyHook(KeyHook hook) { s_hook = std::move(hook); }
+void setHoldHandler(std::function<void()> handler) { s_holdHandler = std::move(handler); }
 void clearKeyHook()           { s_hook = nullptr; }
 
 uint32_t lastActivity() { return s_lastActivity; }

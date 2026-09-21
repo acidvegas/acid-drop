@@ -39,7 +39,33 @@ void randomizeMac() {
           mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 }
 
-void onWiFiEvent(WiFiEvent_t event) {
+// The supplicant's reason code is the only thing that distinguishes "wrong
+// password" from "AP out of range" from "AP pushed us off", and Arduino only
+// prints it at a debug level we do not ship.
+const char* disconnectReason(uint8_t reason) {
+    switch (reason) {
+        case WIFI_REASON_AUTH_EXPIRE:         return "auth expired";
+        case WIFI_REASON_AUTH_LEAVE:          return "auth leave";
+        case WIFI_REASON_ASSOC_EXPIRE:        return "association expired";
+        case WIFI_REASON_ASSOC_TOOMANY:       return "AP has too many clients";
+        case WIFI_REASON_NOT_AUTHED:          return "not authenticated";
+        case WIFI_REASON_NOT_ASSOCED:         return "not associated";
+        case WIFI_REASON_ASSOC_LEAVE:         return "AP disconnected us";
+        case WIFI_REASON_MIC_FAILURE:         return "MIC failure";
+        case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT: return "handshake timeout - wrong password?";
+        case WIFI_REASON_GROUP_KEY_UPDATE_TIMEOUT: return "group key timeout";
+        case WIFI_REASON_IE_IN_4WAY_DIFFERS:  return "key mismatch - wrong password?";
+        case WIFI_REASON_BEACON_TIMEOUT:      return "beacon timeout - out of range?";
+        case WIFI_REASON_NO_AP_FOUND:         return "no AP with that name found";
+        case WIFI_REASON_AUTH_FAIL:           return "authentication rejected";
+        case WIFI_REASON_ASSOC_FAIL:          return "association rejected";
+        case WIFI_REASON_HANDSHAKE_TIMEOUT:   return "handshake timeout";
+        case WIFI_REASON_CONNECTION_FAIL:     return "connection failed";
+        default:                              return "unknown";
+    }
+}
+
+void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
     switch (event) {
         case ARDUINO_EVENT_WIFI_STA_GOT_IP:
             s_connected = true;
@@ -50,15 +76,18 @@ void onWiFiEvent(WiFiEvent_t event) {
             if (onConnectionChanged) onConnectionChanged(true);
             break;
 
-        case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+        case ARDUINO_EVENT_WIFI_STA_DISCONNECTED: {
+            const uint8_t reason = info.wifi_sta_disconnected.reason;
+            LOG_W(TAG, "disconnected: reason %u (%s)", reason, disconnectReason(reason));
+
             if (s_connected) {
                 s_connected = false;
-                LOG_W(TAG, "disconnected");
                 if (onConnectionChanged) onConnectionChanged(false);
             }
             // Retry on the configured cadence rather than immediately.
             s_nextRetryAt = millis() + settings::getInt("wifi_retry") * 1000UL;
             break;
+        }
 
         case ARDUINO_EVENT_WIFI_SCAN_DONE:
             break;

@@ -116,6 +116,8 @@ void begin() {
     lv_obj_set_scrollable(s_content, false);
 
     LOG_I(TAG, "ui: channels");
+    input::setHoldHandler([] { home(); });
+
     channels::begin();
     LOG_I(TAG, "ui: irc");
     s_irc.begin();
