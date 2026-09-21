@@ -56,6 +56,7 @@ struct IrcBuffer {
     String              retryReason;       // e.g. "+i", shown while retrying
     String              key;               // channel key, when one is known
     String              topic;
+    String              modes;             // from RPL_CHANNELMODEIS
     std::vector<String> nicks;
 
     bool isStatus() const  { return kind == BufferKind::Status; }
