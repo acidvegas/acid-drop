@@ -3,8 +3,9 @@
 #include <Arduino.h>
 #include <lvgl.h>
 
-// The phone-style bar across the top: clock on the left, radio and battery
-// indicators on the right. Dragging it down opens the quick settings shade.
+// The bar across the top: clock on the left, radio and battery indicators on
+// the right. Display only - it takes no input, so it cannot swallow presses
+// meant for the controls beneath it.
 
 namespace statusbar {
 

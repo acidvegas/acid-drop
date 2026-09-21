@@ -78,6 +78,7 @@ struct ConnectJob {
     bool          tls       = false;
     String        caPem;                 // empty means do not verify
     WiFiClient*   socket    = nullptr;
+    IPAddress     resolved;              // 0.0.0.0 when DNS failed
     volatile bool done      = false;
     volatile bool ok        = false;
     volatile bool abandoned = false;
@@ -98,6 +99,11 @@ void connectTask(void* arg) {
         socket = new WiFiClient();
         socket->setTimeout(8);
     }
+
+    // Resolve first and record it, so a DNS failure is distinguishable from
+    // the server refusing or resetting the connection. Logged by the caller:
+    // the log buffer is not safe to touch from this task.
+    WiFi.hostByName(job->host.c_str(), job->resolved);
 
     const bool ok = socket->connect(job->host.c_str(), job->port);
 
@@ -286,15 +292,31 @@ void IrcClient::pollConnect() {
         return;
     }
 
-    const bool  ok     = job->ok;
-    WiFiClient* socket = job->socket;
+    const bool      ok       = job->ok;
+    WiFiClient*     socket   = job->socket;
+    const IPAddress resolved = job->resolved;
     m_job = nullptr;
     delete job;
 
     if (!ok) {
-        LOG_W(TAG, "connect failed (tls=%d), free heap %u",
-              m_usingTls ? 1 : 0, (unsigned)ESP.getFreeHeap());
-        addStatus("Connection failed", LINE_ERROR);
+        const bool resolvedOk = resolved != IPAddress(0, 0, 0, 0);
+
+        LOG_W(TAG, "connect failed (tls=%d), dns=%s, free heap %u",
+              m_usingTls ? 1 : 0,
+              resolvedOk ? resolved.toString().c_str() : "FAILED",
+              (unsigned)ESP.getFreeHeap());
+
+        if (!resolvedOk) {
+            addStatus("Cannot resolve the server name - check DNS or the network",
+                      LINE_ERROR);
+        } else {
+            // Reaching the host and being refused is a different problem from
+            // not reaching it at all, and the user can act on the difference.
+            addStatus("Reached " + resolved.toString() +
+                      " but the connection was refused or reset. The network may "
+                      "block IRC, or the server may be throttling this address.",
+                      LINE_ERROR);
+        }
         if (socket) {
             socket->stop();
             delete socket;

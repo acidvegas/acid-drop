@@ -131,10 +131,18 @@ void setup() {
     bootStage("sound");
     audio::alert(Alert::Boot);
 
-    // Boot is quick enough now that the splash would otherwise flash past
-    // before anyone could see it.
+    // Hold the splash until the jingle has finished, so the two land together.
+    // audio::loop() has to be pumped here: nothing else is running yet, and
+    // without it the tune would never advance and isPlaying() would never
+    // clear. Capped so a stuck decoder cannot hold up the boot.
     const uint32_t splashMs = settings::getInt("splash_ms");
-    while (millis() - s_logoShownAt < splashMs) delay(10);
+    const uint32_t splashCap = 20000;
+    while (millis() - s_logoShownAt < splashCap) {
+        audio::loop();
+        const bool minimumMet = millis() - s_logoShownAt >= splashMs;
+        if (minimumMet && !audio::isPlaying()) break;
+        delay(5);
+    }
 
     bootStage("ui");
     ui::begin();

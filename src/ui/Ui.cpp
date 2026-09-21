@@ -15,7 +15,6 @@
 #include "core/Settings.h"
 #include "irc/ChannelList.h"
 #include "irc/IrcClient.h"
-#include "ui/Shade.h"
 #include "ui/StatusBar.h"
 #include "ui/Theme.h"
 
@@ -102,9 +101,6 @@ void begin() {
     lv_obj_set_style_bg_opa(s_content, LV_OPA_COVER, 0);
     lv_obj_set_scrollable(s_content, false);
 
-    LOG_I(TAG, "ui: shade");
-    shade::create();
-
     LOG_I(TAG, "ui: channels");
     channels::begin();
     LOG_I(TAG, "ui: irc");
@@ -130,7 +126,6 @@ void loop() {
     if (now - lastStatusTick > 500) {
         lastStatusTick = now;
         statusbar::tick();
-        if (shade::isOpen()) shade::tick();
     }
 
     if (s_toast && s_toastUntil != 0 && static_cast<int32_t>(now - s_toastUntil) >= 0) {
