@@ -201,6 +201,16 @@ void IrcClient::connect() {
     m_triedTlsAlready = false;
     m_reconnectDelay  = 0;
     m_reconnectAt     = 0;
+
+    // Do not dial before there is a network. loop() picks this up the moment
+    // WiFi associates; attempting it now only produces a socket error and then
+    // pushes the first real attempt out behind a backoff delay.
+    if (WiFi.status() != WL_CONNECTED) {
+        addStatus("Waiting for a network connection", LINE_LOCAL);
+        setState(IrcState::Offline);
+        return;
+    }
+
     if (m_state == IrcState::Offline || m_state == IrcState::Reconnecting) startConnect();
 }
 
