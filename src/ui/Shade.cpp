@@ -4,6 +4,7 @@
 #include "board/Ble.h"
 #include "board/Display.h"
 #include "board/Gps.h"
+#include "board/Input.h"
 #include "board/Power.h"
 #include "board/Radio.h"
 #include "core/Log.h"
@@ -96,17 +97,26 @@ void toggleEventCb(lv_event_t* event) {
     tick();
 }
 
+// Sliders fire continuously while they are dragged. Persisting on every one of
+// those events means an NVS flash write per pixel of travel, which stalls for
+// seconds and makes the control look dead. Apply the value immediately for
+// feedback, and only write it down once the finger lifts.
 void brightnessEventCb(lv_event_t* event) {
     const int32_t value = lv_slider_get_value(static_cast<lv_obj_t*>(lv_event_get_target(event)));
-    settings::setInt("brightness", value);
+
+    input::noteActivity();
     display::setBrightness(value);
-    power::wake();
+
+    if (lv_event_get_code(event) == LV_EVENT_RELEASED) settings::setInt("brightness", value);
 }
 
 void volumeEventCb(lv_event_t* event) {
     const int32_t value = lv_slider_get_value(static_cast<lv_obj_t*>(lv_event_get_target(event)));
-    settings::setInt("snd_volume", value);
+
+    input::noteActivity();
     audio::setVolume(value);
+
+    if (lv_event_get_code(event) == LV_EVENT_RELEASED) settings::setInt("snd_volume", value);
 }
 
 void scrimEventCb(lv_event_t*) {
@@ -195,6 +205,7 @@ lv_obj_t* makeSlider(lv_obj_t* parent, const char* icon, int32_t min, int32_t ma
     lv_obj_set_style_bg_color(slider, theme::accent(), LV_PART_INDICATOR);
     lv_obj_set_style_bg_color(slider, theme::accent(), LV_PART_KNOB);
     lv_obj_add_event_cb(slider, callback, LV_EVENT_VALUE_CHANGED, nullptr);
+    lv_obj_add_event_cb(slider, callback, LV_EVENT_RELEASED, nullptr);
 
     return slider;
 }

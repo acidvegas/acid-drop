@@ -9,10 +9,11 @@
 namespace wifiapp {
 namespace {
 
-lv_obj_t* s_page    = nullptr;
-lv_obj_t* s_status  = nullptr;
-lv_obj_t* s_list    = nullptr;
-lv_obj_t* s_prompt  = nullptr;
+lv_obj_t* s_page      = nullptr;
+lv_obj_t* s_status    = nullptr;
+lv_obj_t* s_list      = nullptr;
+lv_obj_t* s_prompt    = nullptr;
+lv_obj_t* s_scanButton = nullptr;
 
 String s_pendingSsid;
 bool   s_listDirty = false;
@@ -140,8 +141,13 @@ void rebuildList() {
 
     if (results.empty()) {
         lv_obj_t* empty = lv_label_create(s_list);
-        lv_label_set_text(empty, net::isScanning() ? "Scanning..." : "No networks found");
-        lv_obj_set_style_text_color(empty, theme::textDim(), 0);
+        lv_label_set_text(empty, net::isScanning()
+                                 ? LV_SYMBOL_REFRESH "  Scanning for networks..."
+                                 : "No networks found. Tap Scan to look again.");
+        lv_label_set_long_mode(empty, LV_LABEL_LONG_WRAP);
+        lv_obj_set_width(empty, LV_PCT(100));
+        lv_obj_set_style_text_color(empty,
+                                    net::isScanning() ? theme::accent() : theme::textDim(), 0);
     }
 }
 
@@ -181,7 +187,13 @@ void create(lv_obj_t* parent) {
     lv_obj_set_style_text_color(scanLabel, lv_color_hex(theme::kBackground), 0);
     lv_obj_set_style_text_font(scanLabel, theme::uiFontSmall(), 0);
     lv_obj_center(scanLabel);
-    lv_obj_add_event_cb(scan, [](lv_event_t*) { net::startScan(); }, LV_EVENT_CLICKED, nullptr);
+    lv_obj_add_event_cb(scan, [](lv_event_t*) {
+        net::startScan();
+        // Say so now rather than on the next tick, so the tap feels answered.
+        if (s_status) lv_label_set_text(s_status, LV_SYMBOL_REFRESH " Scanning...");
+        rebuildList();
+    }, LV_EVENT_CLICKED, nullptr);
+    s_scanButton = scan;
     lv_group_add_obj(input::group(), scan);
 
     s_list = lv_obj_create(s_page);
@@ -205,9 +217,10 @@ void destroy() {
     closePrompt();
     input::clearKeyHook();
     net::onScanFinished = nullptr;
-    s_page   = nullptr;
-    s_status = nullptr;
-    s_list   = nullptr;
+    s_page       = nullptr;
+    s_status     = nullptr;
+    s_list       = nullptr;
+    s_scanButton = nullptr;
 }
 
 void tick() {
@@ -223,9 +236,16 @@ void tick() {
     if (now - lastUpdate < 1000) return;
     lastUpdate = now;
 
+    // Grey the button out while a scan is in flight, so it is obvious that
+    // something is happening and a second tap will not queue another one.
+    if (s_scanButton) {
+        if (net::isScanning()) lv_obj_add_state(s_scanButton, LV_STATE_DISABLED);
+        else                   lv_obj_remove_state(s_scanButton, LV_STATE_DISABLED);
+    }
+
     String text;
     if (net::isScanning()) {
-        text = "Scanning...";
+        text = LV_SYMBOL_REFRESH " Scanning...";
     } else if (net::isConnected()) {
         text = net::ssid() + "  " + net::ipAddress();
     } else {

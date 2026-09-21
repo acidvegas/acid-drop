@@ -26,6 +26,23 @@ namespace {
 
 constexpr const char* TAG = "boot";
 
+// Boot progress, written to the panel as well as the log.
+//
+// Serial is not dependable on this board: the S3's USB-JTAG maps DTR and RTS
+// onto the boot strapping pins, so attaching a monitor tends to reset the
+// device into ROM download mode instead of showing you the log. The display is
+// already up by the time anything interesting can fail, so it is the more
+// reliable instrument - if the device wedges, the last stage it printed is
+// still on screen.
+void bootStage(const char* name) {
+    LOG_I(TAG, "stage: %s", name);
+
+    gfx.fillRect(0, BOARD_TFT_HEIGHT - 16, BOARD_TFT_WIDTH, 16, 0x0000);
+    gfx.setTextSize(1);
+    gfx.setTextColor(0x35E0, 0x0000);
+    gfx.drawString(name, 4, BOARD_TFT_HEIGHT - 13);
+}
+
 // The XBM logo is 1bpp, so it is drawn straight to the panel before LVGL takes
 // over the framebuffer.
 void drawBootLogo() {
@@ -98,21 +115,28 @@ void setup() {
     checkRecoveryKey();
     drawBootLogo();
 
+    bootStage("spi");
     SPI.begin(BOARD_SPI_SCK, BOARD_SPI_MISO, BOARD_SPI_MOSI);
+
+    bootStage("sd card");
     mountSdCard();
 
-    power::begin();
-    audio::begin();
-    input::begin();
-    gps::begin();
-    radio::begin();
-    ble::begin();
-    net::begin();
+    bootStage("power");   power::begin();
+    bootStage("audio");   audio::begin();
+    bootStage("input");   input::begin();
+    bootStage("gps");     gps::begin();
+    bootStage("lora");    radio::begin();
+    bootStage("bluetooth"); ble::begin();
+    bootStage("wifi");    net::begin();
 
+    bootStage("sound");
     audio::alert(Alert::Boot);
     delay(700);          // let the logo and the jingle land
 
+    bootStage("ui");
     ui::begin();
+
+    bootStage("running");
 
     LOG_I(TAG, "boot complete, %u KB heap free", ESP.getFreeHeap() / 1024);
 }
