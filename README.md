@@ -2,114 +2,166 @@
   <img src="./.screens/aciddrop2.png" />
 </p>
 
-# Work in progress
-This is a custom firmware being developed for the [LilyGo T-Deck](https://www.lilygo.cc/products/t-deck), currently it is experimental & buggy while we are in beta status.
+# ACID DROP
 
-If you are familiar with or use [Internet Relay Chat](https://en.wikipedia.org/wiki/IRC), we have a team of developers working on this project in **#comms** on **[irc.supernets.org](irc://irc.supernets.org)**, join us if you have ideas, bugs, or want to get your hands dirty & develope this project with us.
+Custom firmware for the [LilyGo T-Deck Plus](https://www.lilygo.cc/products/t-deck) (and the
+original T-Deck): an IRC client with a phone-style LVGL interface, built for people who still
+care what `^C04,01` looks like on a 320x240 screen.
 
-Consider sponsoring our project, all the money goes towards motivation to develope on this, we also like buying T-Decks for people who want to learn about this stuff!
+Development happens in **#superbowl** on **[irc.supernets.org](irc://irc.supernets.org)**. Come
+break it with us.
 
 ![](./.screens/preview.png)
 
-![](./.screens/lvgl.png)
+## What it does
 
-# Flashing the Firmware
-###### Using VS Code
-1. Add your user to the `dialout` group: `sudo gpasswd -a YOURUSERNAME dialout` *(You will need to re-login after adding your user to the `dialout` group for it to take affect)*
-2. Install [Visual Studio Code](https://code.visualstudio.com/)
-3. Install the [PlatformIO plugin](https://platformio.org/install/ide?install=vscode)
-4. Hold down the trackball on the device, turn it on, and plug it in to the computer.
-5. Press **F1** and select `PlatformIO: Build`
-6. Press **F1** and select `PlatformIO: Upload`
-7. Press the RST *(reset)* button on the device.
+**Interface**
+- LVGL 9 UI on LovyanGFX, with touch, trackball and keyboard all wired into the same focus system
+- Status bar with clock, battery, WiFi, Bluetooth, GPS and sound indicators
+- Pull-down quick settings shade: radio toggles, brightness and volume sliders, live status readout
+- App launcher: IRC, WiFi, Settings, Syslog, About
 
-###### Using ESP Tool
-1. Take the `firmware.bin` file from the release page and download it.
-2. Install [esptool](https://pypi.org/project/esptool/): `pip install esptool`
-3. Hold down the trackball on the device, turn it on, and plug it in to the computer.
-4. Confirm the serial device in your `/dev` directory *(Your device will likely be `/dev/ttyAMC0` or `/dev/ttyUSB0`)*
-5. Flash the device: `esptool.py --chip esp32-s3 --port /dev/ttyUSB0 --baud 115200 write_flash -z 0x1000 firmware.bin`
-6. Press the RST *(reset)* button on the device.
+**IRC**
+- Multiple windows: a server/status window, channels and private messages, switchable by tab, arrow keys or `/0`..`/9`
+- Full mIRC formatting: 99-colour palette, hex colours (`^D`), bold, italic, underline, strikethrough and reverse video
+- ANSI escape sequences (SGR), including 256-colour and truecolour, so pasted terminal output and `.ans` art render
+- A real character-cell renderer with per-cell background colours, because most ASCII/ANSI art is drawn with coloured spaces
+- Monospace CP437 font covering box drawing, block elements and shading; block characters are drawn as rectangles so tiled art has no seams
+- Lines that are not valid UTF-8 are decoded as code page 437, which is how BBS-era art usually arrives
+- TLS with SASL PLAIN, NickServ fallback, automatic plaintext fallback to 6667
+- Reconnects automatically with exponential backoff, rejoins after a kick, and keeps retrying channels that are `+i`, `+k`, `+b` or full
+- Configurable delay between the welcome numeric (001) and the first JOIN, defaulting to six seconds
 
-# Command & Control
-###### Menu controls
-On boot, if you press the `w` key, it will wipe all of the stored preferences.
+**Everything else**
+- Around ninety settings across twelve sections, all editable on the device, all applied live
+- GNSS on the T-Deck Plus, LoRa (SX1262), BLE, SD card
+- On-device syslog so you can debug without a USB cable
 
-The device will scan for WiFi networks on boot. Once the list is displayed, you can scroll up and down the list with the `u` key for UP and the `d` key for down.
+## Flashing
 
-###### IRC commands
-| Command         | Description                 |
-| --------------- | --------------------------- |
-| `/info`         | Show hardware information   |
-| `/me <message>` | Send an ACTION message      |
-| `/nick <new>`   | Change your NICK on IRC     |
-| `/raw <data>`   | Send RAW data to the server |
+### PlatformIO
 
-# Debugging over Serial
-1. Install screen: `apt-get install screen` *(or whatever package manager you use)*
-2. Plug in your device via USB.
-2. Turn the device on, and run: `screen /dev/ttyAMC0 9600` *(again, this can also be /dev/ttyUSB0)*
+```sh
+pio run -e t-deck-plus -t upload    # T-Deck Plus (with GNSS)
+pio run -e t-deck      -t upload    # original T-Deck
+pio device monitor
+```
 
-# Roapmap
-###### Device functionality
-- [X] Screen timeout on inactivity *(default 30 seconds)*
-  - [ ] Keyboard backlight timeout with screen timeout
-- [ ] Trackball support
-- [X] Speaker support
-  - [X] Bootup sounds
-  - [X] IRC mention sounds
-- [ ] GPS support
-- [ ] Lora support
-- [ ] BLE support
-- [ ] SD card support
+Hold the trackball down, turn the device on, then plug it into the computer to get it into
+download mode. On Linux, add yourself to the `dialout` group first.
 
-###### Features
-- [X] LVGL used for enhanced UI
-- [X] Wifi scanning & selection menu
-  - [x] Saved wifi profiles
-- [ ] Wifi Hotspot
-- [ ] Notifcations Window *(All notifications will go here, from IRC, Gotify, Meshtastic, or anything)*
-- [X] Status bar *(Time, Date, Notification, Wifi, and Battery)*
-  - [ ] XBM icons for status bar items
-- [ ] Allow specifying the IRC server, port, TLS, nick, etc...
+### esptool
+
+```sh
+pip install esptool
+esptool.py --chip esp32-s3 --port /dev/ttyUSB0 --baud 921600 write_flash -z 0x0 firmware.bin
+```
+
+## Using it
+
+### Keys
+
+| Key                  | What it does                                  |
+| -------------------- | --------------------------------------------- |
+| Trackball up/down    | Scroll the message window                     |
+| Trackball left/right | Previous / next window (when the input is empty) |
+| Trackball click      | Select whatever has focus                     |
+| `esc`                | Back to the launcher                          |
+| Drag the status bar  | Open the quick settings shade                 |
+| Hold `w` at boot     | Erase every setting and reboot                |
+
+### IRC commands
+
+| Command                | Description                             |
+| ---------------------- | --------------------------------------- |
+| `/join #chan [key]`    | Join a channel                          |
+| `/part [#chan]`        | Leave a channel                         |
+| `/close`               | Close the current window                |
+| `/msg <target> <text>` | Send a message without opening a window |
+| `/query <nick>`        | Open a private message window           |
+| `/me <action>`         | Send a CTCP ACTION                      |
+| `/nick <name>`         | Change nick                             |
+| `/topic [text]`        | Show or set the channel topic           |
+| `/names`               | Re-request the user list                |
+| `/connect`             | Connect to the configured server        |
+| `/disconnect`          | Disconnect and stay offline             |
+| `/quit [message]`      | Quit with a message                     |
+| `/raw <line>`          | Send a raw protocol line                |
+| `/clear`               | Clear the current window                |
+| `/settings`            | Open the settings app                   |
+| `/0` .. `/9`           | Jump to a window by number              |
+| `/help`                | List these                              |
+
+### Settings
+
+Everything lives in one registry in `src/core/Settings.cpp`. Adding an option means adding one
+row there: storage, the settings screen and JSON import/export are all generated from it.
+
+Sections: Device, Display, Sound, Power, WiFi, IRC, IRC auth, IRC timing, IRC display, GPS,
+LoRa, Bluetooth, Advanced.
+
+The timing values that control reconnect behaviour are under **IRC timing**:
+
+| Setting              | Default | Meaning                                          |
+| -------------------- | ------- | ------------------------------------------------ |
+| Join delay           | 6000 ms | Wait after 001 before the first JOIN             |
+| Auto-reconnect       | on      | Reconnect whenever the link drops                |
+| Reconnect delay      | 5 s     | First retry delay, doubling up to the max        |
+| Max backoff          | 120 s   | Ceiling for the reconnect delay                  |
+| Rejoin on kick       | on      | Come back after being kicked                     |
+| Kick rejoin delay    | 3 s     | How long to wait before rejoining                |
+| Retry failed joins   | on      | Keep trying `+i`, `+k`, `+b` and full channels   |
+| Join retry delay     | 5 s     | How often to retry those                         |
+| Ping timeout         | 260 s   | Drop a link that has gone quiet                  |
+
+## Building
+
+### Requirements
+
+- PlatformIO Core
+- Node and `lv_font_conv`, only if you want to regenerate the fonts
+
+### Fonts
+
+`src/ui/fonts/` holds two generated LVGL fonts. To rebuild them:
+
+```sh
+npm install -g lv_font_conv
+./tools/build_fonts.sh
+```
+
+The sizes are 10px and 15px because those are the only ones where Menlo's advance width lands on
+a whole pixel. A fractional advance puts seams in box-drawing art, which is the whole reason
+this font exists. Override the source font with `ACID_FONT=/path/to/font.ttf`.
+
+### Layout
+
+```
+src/
+  board/     hardware: display, input, power, audio, GPS, LoRa, BLE
+  core/      settings registry and logging
+  irc/       message parser and the client state machine
+  net/       WiFi association, scanning and clock sync
+  ui/        theme, status bar, shade, and the character-cell renderer
+  apps/      launcher, IRC, settings, WiFi, syslog, about
+```
+
+## Known limitations
+
+- Connecting to IRC blocks the UI for a second or two. The Arduino socket API has no
+  non-blocking connect and a TLS handshake on an ESP32 is not fast. Moving the client to its own
+  task is the fix, and it has not been done yet.
+- Certificate verification only works if you put a CA bundle at `/irc-ca.pem` on the SD card.
+  Without one the device says so and connects unverified rather than pretending otherwise.
+- ANSI art wider than the screen needs horizontal scrolling, which is not implemented; wide art
+  is wrapped instead.
+
+## Roadmap
+
+- [ ] Move the IRC client onto its own FreeRTOS task
+- [ ] Horizontal scrolling for wide ANSI art
+- [ ] Notification centre for IRC, Gotify and Meshtastic
+- [ ] Wardriving, evil portal, local network probe
+- [ ] Gotify and Meshtastic bridges
+- [ ] SSH client
 - [ ] Screensaver
-- [X] Serial debug logs
-
-###### Applications
-- [ ] Rubber Ducky
-- [X] IRC Client
-  - [X] `/raw` command for IRC client to send raw data to the server
-  - [ ] Add scrolling backlog for IRC to see the last 200 messages
-  - [ ] Multi-buffer support *(`/join` & `/part` support with switching between buffers with `/0`, `/1`, `/2`, etc)* *(`/close` also for PM buffers or kicked from channels)*
-  - [ ] Status window for network to show RAW lines from the IRC server *(buffer 0)*
-  - [ ] Hilight monitor buffer
-  - [X] Hilight support *(so we can see when people mention our NICK)*
-  - [X] 99 color support
-  - [ ] `/pm` support *(it should open a buffer for pms)*
-  - [ ] NickServ support
-- [ ] ChatGPT
-- [ ] SSH Client
-- [ ] Wardriving
-- [ ] Evil Portal AP
-- [ ] Local Network Probe *(Scans for devices on the wifi network you are connected to, add port scanning)*
-- [ ] Gotify *(in progress)*
-- [ ] Meshtastic *(in progress)*
-- [ ] Spotify/Music player *(can we play audio throuigh Bluetoth headphones or the on-board speaker?)*
-- [ ] Syslog *(All serial logs will be displayed here for on-device debugging)*
-
-# Ideas
-- Replace the `ESP32-S3FN16R8` with a `ESP32-S3-WROOM-1U` which has an iPex connector for an external WiFi antenna.
-
-# Previews
-###### 99 Color support
-![](./.screens/99colors.png)
-
-###### Full ASCII support for PUMPERS
-![](./.screens/ascii.png)
-
-###### Support for /HUEG
-![](./.screens/hueg.png)
-
-___
-
-###### Mirrors for this repository: [acid.vegas](https://git.acid.vegas/acid-drop) • [SuperNETs](https://git.supernets.org/acidvegas/acid-drop) • [GitHub](https://github.com/acidvegas/acid-drop) • [GitLab](https://gitlab.com/acidvegas/acid-drop) • [Codeberg](https://codeberg.org/acidvegas/acid-drop)
