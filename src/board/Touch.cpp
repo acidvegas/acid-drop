@@ -4,6 +4,7 @@
 
 #include "board/pins.h"
 #include "core/Log.h"
+#include "core/Settings.h"
 
 namespace touch {
 namespace {
@@ -83,12 +84,33 @@ bool read(int16_t& x, int16_t& y) {
 
             // The panel reports in its native portrait orientation (240x320)
             // while the UI runs landscape, so rotate a quarter turn here.
+            // The controller reports in the panel's native portrait frame. Which
+            // quarter turn maps that onto the landscape UI depends on how the
+            // panel is mounted, so it is a setting rather than a guess: if taps
+            // land in the wrong place, change Display > Touch mapping.
+            const uint8_t mapping = settings::getEnum("touch_map");
+            switch (mapping) {
+                case 1:
+                    x = static_cast<int16_t>((BOARD_TFT_WIDTH - 1) - rawY);
+                    y = static_cast<int16_t>(rawX);
+                    break;
+                case 2:
+                    x = static_cast<int16_t>(rawY);
+                    y = static_cast<int16_t>(rawX);
+                    break;
+                case 3:
+                    x = static_cast<int16_t>((BOARD_TFT_WIDTH - 1) - rawY);
+                    y = static_cast<int16_t>((BOARD_TFT_HEIGHT - 1) - rawX);
+                    break;
+                default:
+                    x = static_cast<int16_t>(rawY);
+                    y = static_cast<int16_t>((BOARD_TFT_HEIGHT - 1) - rawX);
+                    break;
+            }
+
             if (s_flipped) {
-                x = static_cast<int16_t>((BOARD_TFT_WIDTH - 1) - rawY);
-                y = static_cast<int16_t>(rawX);
-            } else {
-                x = static_cast<int16_t>(rawY);
-                y = static_cast<int16_t>((BOARD_TFT_HEIGHT - 1) - rawX);
+                x = static_cast<int16_t>((BOARD_TFT_WIDTH - 1) - x);
+                y = static_cast<int16_t>((BOARD_TFT_HEIGHT - 1) - y);
             }
 
             if (x < 0) x = 0;
@@ -96,7 +118,14 @@ bool read(int16_t& x, int16_t& y) {
             if (x >= BOARD_TFT_WIDTH)  x = BOARD_TFT_WIDTH - 1;
             if (y >= BOARD_TFT_HEIGHT) y = BOARD_TFT_HEIGHT - 1;
 
-            LOG_D(TAG, "raw %u,%u -> %d,%d", rawX, rawY, x, y);
+            // At info level for the first few, so the mapping can be checked
+            // against a known tap without rebuilding.
+            static uint8_t logged = 0;
+            if (logged < 12) {
+                logged++;
+                LOG_I(TAG, "raw %u,%u -> screen %d,%d (mapping %u)",
+                      rawX, rawY, x, y, settings::getEnum("touch_map"));
+            }
             touched = true;
         }
     }
