@@ -5,6 +5,7 @@
 #include "board/Input.h"
 #include "core/Log.h"
 #include "core/Settings.h"
+#include "irc/IrcCommands.h"
 #include "ui/StatusBar.h"
 #include "ui/TermView.h"
 #include "ui/Theme.h"
@@ -111,125 +112,65 @@ void tabEventCb(lv_event_t* event) {
 
 // --- commands -------------------------------------------------------------
 
-void showHelp() {
+void selectRelative(int delta) {
+    const size_t count = ui::irc().bufferCount();
+    if (count == 0) return;
+
+    int next = static_cast<int>(s_activeBuffer) + delta;
+    while (next < 0) next += count;
+    selectBuffer(next % count);
+}
+
+void echoLocal(const String& text) {
     IrcBuffer& buffer = activeBuffer();
-    static const char* kHelp[] = {
-        "Commands:",
-        "  /join #chan [key]   /part [#chan]   /close",
-        "  /msg nick text      /query nick     /me action",
-        "  /nick name          /topic [text]   /names",
-        "  /connect            /disconnect     /quit [msg]",
-        "  /raw line           /clear          /settings",
-        "  /0 .. /9            switch window",
-        "Keys: up/down scroll, left/right change window, esc exits",
-    };
-    for (const char* line : kHelp) {
-        buffer.doc.append(line, static_cast<uint32_t>(time(nullptr)), LINE_LOCAL, false);
-    }
-    s_view.scrollToBottom();
+    buffer.doc.append(text, static_cast<uint32_t>(time(nullptr)), LINE_LOCAL, false);
+    if (s_view.atBottom()) s_view.scrollToBottom();
     lv_obj_invalidate(s_view.object());
 }
 
-// Returns true when the text was a command (handled or rejected).
-bool runCommand(const String& raw) {
-    if (!raw.startsWith("/")) return false;
+irccmd::Context commandContext() {
+    irccmd::Context context;
+    context.client = &ui::irc();
+    context.window = &activeBuffer();
 
-    IrcClient& client = ui::irc();
-    IrcBuffer& buffer = activeBuffer();
+    context.echo         = echoLocal;
+    context.selectWindow = [](size_t index) { selectBuffer(index); };
+    context.nextWindow   = [] { selectRelative(1); };
+    context.prevWindow   = [] { selectRelative(-1); };
 
-    const int    space   = raw.indexOf(' ');
-    String       verb    = space < 0 ? raw.substring(1) : raw.substring(1, space);
-    const String rest    = space < 0 ? String() : raw.substring(space + 1);
-    verb.toLowerCase();
-
-    // /0 .. /9 jump straight to a window.
-    if (verb.length() <= 2 && verb.length() > 0 && isdigit(static_cast<unsigned char>(verb[0]))) {
-        selectBuffer(verb.toInt());
-        return true;
-    }
-
-    if (verb == "join" && !rest.isEmpty()) {
-        const int keySpace = rest.indexOf(' ');
-        const String channel = keySpace < 0 ? rest : rest.substring(0, keySpace);
-        const String key     = keySpace < 0 ? String() : rest.substring(keySpace + 1);
-        client.join(channel, key);
-        return true;
-    }
-
-    if (verb == "part") {
-        const String target = rest.isEmpty() ? buffer.name : rest;
-        if (irc::isChannel(target)) client.part(target);
-        else ui::toast("Not a channel");
-        return true;
-    }
-
-    if (verb == "close") {
-        if (!client.closeBuffer(s_activeBuffer)) {
+    context.closeWindow = [] {
+        if (!ui::irc().closeBuffer(s_activeBuffer)) {
             ui::toast("Cannot close the status window");
         } else {
             selectBuffer(0);
         }
-        return true;
-    }
+    };
+    context.clearWindow = [] {
+        activeBuffer().doc.clear();
+        lv_obj_invalidate(s_view.object());
+    };
+    context.openSettings = [] { ui::openApp(ui::AppId::IrcSettings); };
+    context.openChannels = [] { ui::openApp(ui::AppId::Channels); };
 
-    if (verb == "msg" || verb == "privmsg") {
-        const int textSpace = rest.indexOf(' ');
-        if (textSpace < 0) { ui::toast("Usage: /msg target text"); return true; }
-        client.say(rest.substring(0, textSpace), rest.substring(textSpace + 1));
-        return true;
-    }
-
-    if (verb == "query") {
-        if (rest.isEmpty()) { ui::toast("Usage: /query nick"); return true; }
-        client.ensureBuffer(rest, BufferKind::Query);
-        for (size_t i = 0; i < client.bufferCount(); i++) {
-            if (irc::equalsIgnoreCaseIrc(client.buffer(i).name, rest)) { selectBuffer(i); break; }
-        }
-        return true;
-    }
-
-    if (verb == "me") {
-        if (buffer.isStatus()) { ui::toast("No target here"); return true; }
-        client.action(buffer.name, rest);
-        return true;
-    }
-
-    if (verb == "nick")  { client.setNick(rest); return true; }
-    if (verb == "topic") {
-        if (!buffer.isChannel()) { ui::toast("Not a channel"); return true; }
-        client.sendRaw(rest.isEmpty() ? "TOPIC " + buffer.name
-                                      : "TOPIC " + buffer.name + " :" + rest);
-        return true;
-    }
-    if (verb == "names") {
-        if (buffer.isChannel()) client.sendRaw("NAMES " + buffer.name);
-        return true;
-    }
-
-    if (verb == "connect")    { client.connect(); return true; }
-    if (verb == "disconnect") { client.disconnect(settings::getText("irc_quitmsg"), true); return true; }
-    if (verb == "quit")       { client.disconnect(rest.isEmpty() ? settings::getText("irc_quitmsg") : rest, true); return true; }
-    if (verb == "raw")        { client.sendRaw(rest); return true; }
-    if (verb == "clear")      { buffer.doc.clear(); lv_obj_invalidate(s_view.object()); return true; }
-    if (verb == "settings")   { ui::openApp(ui::AppId::Settings); return true; }
-    if (verb == "help")       { showHelp(); return true; }
-
-    ui::toast("Unknown command: /" + verb);
-    return true;
+    return context;
 }
 
 void submitInput() {
     const char* raw = lv_textarea_get_text(s_input);
     if (raw == nullptr || raw[0] == '\0') return;
 
-    const String text(raw);
+    String text(raw);
     lv_textarea_set_text(s_input, "");
 
-    if (runCommand(text)) return;
+    const irccmd::Context context = commandContext();
+    if (irccmd::run(text, context)) return;
+
+    // "//foo" is how you send a line that really does start with a slash.
+    if (text.startsWith("//")) text = text.substring(1);
 
     IrcBuffer& buffer = activeBuffer();
     if (buffer.isStatus()) {
-        ui::toast("Pick a window, or use /join");
+        echoLocal("No target in this window - use /join or /query, or /help");
         return;
     }
     ui::irc().say(buffer.name, text);
@@ -257,13 +198,7 @@ bool keyHook(uint32_t key) {
             const char* text = lv_textarea_get_text(s_input);
             if (text && text[0] != '\0') return false;
 
-            const size_t count = ui::irc().bufferCount();
-            if (count == 0) return true;
-            if (key == LV_KEY_LEFT) {
-                selectBuffer(s_activeBuffer == 0 ? count - 1 : s_activeBuffer - 1);
-            } else {
-                selectBuffer((s_activeBuffer + 1) % count);
-            }
+            selectRelative(key == LV_KEY_LEFT ? -1 : 1);
             return true;
         }
 
@@ -289,17 +224,43 @@ void create(lv_obj_t* parent) {
     lv_obj_set_style_pad_row(s_page, 0, 0);
     lv_obj_set_scrollable(s_page, false);
 
-    // Window tabs.
-    s_tabs = lv_obj_create(s_page);
+    // Tab strip, with the app's own settings hanging off the right end.
+    lv_obj_t* tabRow = lv_obj_create(s_page);
+    lv_obj_remove_style_all(tabRow);
+    lv_obj_set_size(tabRow, LV_PCT(100), 22);
+    lv_obj_set_flex_flow(tabRow, LV_FLEX_FLOW_ROW);
+    lv_obj_set_style_bg_color(tabRow, lv_color_hex(theme::kSurface), 0);
+    lv_obj_set_style_bg_opa(tabRow, LV_OPA_COVER, 0);
+    lv_obj_set_scrollable(tabRow, false);
+
     lv_obj_remove_style_all(s_tabs);
-    lv_obj_set_size(s_tabs, LV_PCT(100), 22);
+    lv_obj_set_height(s_tabs, 22);
+    lv_obj_set_flex_grow(s_tabs, 1);
     lv_obj_set_flex_flow(s_tabs, LV_FLEX_FLOW_ROW);
     lv_obj_set_style_pad_column(s_tabs, 3, 0);
     lv_obj_set_style_pad_hor(s_tabs, 4, 0);
-    lv_obj_set_style_bg_color(s_tabs, lv_color_hex(theme::kSurface), 0);
-    lv_obj_set_style_bg_opa(s_tabs, LV_OPA_COVER, 0);
     lv_obj_set_scroll_dir(s_tabs, LV_DIR_HOR);
     lv_obj_set_scrollbar_mode(s_tabs, LV_SCROLLBAR_MODE_OFF);
+
+    lv_obj_t* gear = lv_obj_create(tabRow);
+    lv_obj_remove_style_all(gear);
+    lv_obj_set_size(gear, 26, 22);
+    lv_obj_set_clickable(gear, true);
+    lv_obj_set_scrollable(gear, false);
+    lv_obj_set_style_bg_color(gear, lv_color_hex(theme::kSurfaceAlt), 0);
+    lv_obj_set_style_bg_opa(gear, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(gear, 4, 0);
+    lv_group_add_obj(input::group(), gear);
+
+    lv_obj_t* gearLabel = lv_label_create(gear);
+    lv_label_set_text(gearLabel, LV_SYMBOL_SETTINGS);
+    lv_obj_set_style_text_font(gearLabel, theme::uiFontSmall(), 0);
+    lv_obj_set_style_text_color(gearLabel, theme::textDim(), 0);
+    lv_obj_center(gearLabel);
+
+    lv_obj_add_event_cb(gear, [](lv_event_t*) {
+        ui::openApp(ui::AppId::IrcSettings);
+    }, LV_EVENT_CLICKED, nullptr);
 
     // Topic / context line.
     s_topic = lv_label_create(s_page);

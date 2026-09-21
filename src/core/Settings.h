@@ -50,7 +50,17 @@ void begin();
 
 const std::vector<SettingDef>& defs();
 const SettingDef*              find(const char* key);
-std::vector<const char*>       sections();
+
+// Settings are grouped so each owner can present its own. The IRC app shows
+// the "irc" group; the Settings app shows everything else.
+constexpr const char* kGroupSystem = "system";
+constexpr const char* kGroupIrc    = "irc";
+
+const char* groupOf(const char* section);
+
+// Sections belonging to `group`, in registry order. Passing nullptr returns
+// every section.
+std::vector<const char*> sections(const char* group = nullptr);
 
 // Reads. An unknown key returns the type's zero value and logs an error.
 bool    getBool(const char* key);

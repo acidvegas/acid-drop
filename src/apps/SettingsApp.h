@@ -4,7 +4,10 @@
 
 namespace settingsapp {
 
+// The Settings app shows everything that is not IRC; the IRC app opens the
+// same screen scoped to its own sections.
 void create(lv_obj_t* parent);
+void createIrc(lv_obj_t* parent);
 void destroy();
 void tick();
 

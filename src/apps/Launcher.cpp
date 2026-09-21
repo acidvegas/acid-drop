@@ -1,6 +1,10 @@
 #include "apps/Launcher.h"
 
+#include <vector>
+
+#include "board/Gps.h"
 #include "board/Input.h"
+#include "core/Settings.h"
 #include "irc/IrcClient.h"
 #include "net/WifiService.h"
 #include "ui/Theme.h"
@@ -9,21 +13,80 @@
 namespace launcher {
 namespace {
 
+// A grid of app tiles. Each tile carries a status line so the home screen is
+// worth looking at rather than just a menu to get past.
 struct Entry {
     const char* icon;
     const char* name;
     ui::AppId   app;
+    String    (*status)();
+    bool      (*active)();     // drives the accent dot, may be null
 };
+
+lv_obj_t* s_grid = nullptr;
+
+struct Tile {
+    lv_obj_t* status;
+    lv_obj_t* dot;
+};
+std::vector<Tile> s_tiles;
+
+String ircStatus() {
+    IrcClient& client = ui::irc();
+
+    uint16_t unread    = 0;
+    bool     highlight = false;
+    for (size_t i = 0; i < client.bufferCount(); i++) {
+        unread    += client.buffer(i).doc.unread;
+        highlight |= client.buffer(i).doc.unreadHighlight;
+    }
+
+    if (client.state() == IrcState::Ready) {
+        // Prefer showing where you are over saying "connected".
+        for (size_t i = 0; i < client.bufferCount(); i++) {
+            IrcBuffer& buffer = client.buffer(i);
+            if (buffer.isChannel() && buffer.joined) {
+                String text = buffer.name;
+                if (unread > 0) text += "  " + String(unread);
+                if (highlight)  text += "!";
+                return text;
+            }
+        }
+    }
+    return client.stateText();
+}
+
+String wifiStatus() {
+    if (!net::enabled())     return "off";
+    if (net::isScanning())   return "scanning";
+    if (!net::isConnected()) return "not connected";
+    return net::ssid();
+}
+
+String settingsStatus() {
+    return String(settings::defs().size()) + " options";
+}
+
+String gpsStatus() {
+    if (!gps::enabled()) return "off";
+    return gps::hasFix() ? String(gps::satellites()) + " sats" : "searching";
+}
+
+String syslogStatus() { return "device log"; }
+String aboutStatus()  { return "system info"; }
+
+bool ircActive()  { return ui::irc().state() == IrcState::Ready; }
+bool wifiActive() { return net::isConnected(); }
+bool gpsActive()  { return gps::hasFix(); }
 
 const Entry kEntries[] = {
-    {LV_SYMBOL_KEYBOARD, "IRC",      ui::AppId::Irc},
-    {LV_SYMBOL_WIFI,     "WiFi",     ui::AppId::Wifi},
-    {LV_SYMBOL_SETTINGS, "Settings", ui::AppId::Settings},
-    {LV_SYMBOL_LIST,     "Syslog",   ui::AppId::Syslog},
-    {LV_SYMBOL_FILE,     "About",    ui::AppId::About},
+    {LV_SYMBOL_KEYBOARD, "IRC",      ui::AppId::Irc,      ircStatus,      ircActive},
+    {LV_SYMBOL_WIFI,     "WiFi",     ui::AppId::Wifi,     wifiStatus,     wifiActive},
+    {LV_SYMBOL_SETTINGS, "Settings", ui::AppId::Settings, settingsStatus, nullptr},
+    {LV_SYMBOL_GPS,      "GPS",      ui::AppId::Gps,      gpsStatus,      gpsActive},
+    {LV_SYMBOL_LIST,     "Syslog",   ui::AppId::Syslog,   syslogStatus,   nullptr},
+    {LV_SYMBOL_FILE,     "About",    ui::AppId::About,    aboutStatus,    nullptr},
 };
-
-lv_obj_t* s_subtitle = nullptr;
 
 void tileEventCb(lv_event_t* event) {
     const Entry* entry = static_cast<const Entry*>(lv_event_get_user_data(event));
@@ -33,71 +96,92 @@ void tileEventCb(lv_event_t* event) {
 } // namespace
 
 void create(lv_obj_t* parent) {
+    s_tiles.clear();
+
     lv_obj_t* page = lv_obj_create(parent);
     lv_obj_remove_style_all(page);
     lv_obj_set_size(page, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_style_pad_all(page, 10, 0);
-    lv_obj_set_flex_flow(page, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(page, 8, 0);
+    lv_obj_set_style_pad_all(page, 7, 0);
     lv_obj_set_scrollable(page, false);
 
-    lv_obj_t* title = lv_label_create(page);
-    lv_label_set_text(title, "ACID DROP");
-    lv_obj_set_style_text_font(title, theme::uiFontLarge(), 0);
-    lv_obj_set_style_text_color(title, theme::accent(), 0);
-
-    s_subtitle = lv_label_create(page);
-    lv_obj_set_style_text_font(s_subtitle, theme::uiFontSmall(), 0);
-    lv_obj_set_style_text_color(s_subtitle, theme::textDim(), 0);
-    lv_label_set_text(s_subtitle, "");
-
-    lv_obj_t* grid = lv_obj_create(page);
-    lv_obj_remove_style_all(grid);
-    lv_obj_set_width(grid, LV_PCT(100));
-    lv_obj_set_flex_grow(grid, 1);
-    lv_obj_set_flex_flow(grid, LV_FLEX_FLOW_ROW_WRAP);
-    lv_obj_set_flex_align(grid, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START);
-    lv_obj_set_style_pad_row(grid, 8, 0);
-    lv_obj_set_style_pad_column(grid, 8, 0);
-    lv_obj_set_scrollbar_mode(grid, LV_SCROLLBAR_MODE_OFF);
+    s_grid = lv_obj_create(page);
+    lv_obj_remove_style_all(s_grid);
+    lv_obj_set_size(s_grid, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_flex_flow(s_grid, LV_FLEX_FLOW_ROW_WRAP);
+    lv_obj_set_flex_align(s_grid, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_SPACE_EVENLY);
+    lv_obj_set_style_pad_row(s_grid, 5, 0);
+    lv_obj_set_style_pad_column(s_grid, 5, 0);
+    lv_obj_set_scrollbar_mode(s_grid, LV_SCROLLBAR_MODE_OFF);
 
     for (const Entry& entry : kEntries) {
-        lv_obj_t* tile = lv_obj_create(grid);
+        lv_obj_t* tile = lv_obj_create(s_grid);
         lv_obj_remove_style_all(tile);
-        lv_obj_set_size(tile, 92, 62);
+        lv_obj_set_size(tile, 97, 92);
         theme::styleRow(tile);
+        lv_obj_set_style_pad_all(tile, 4, 0);
         lv_obj_set_clickable(tile, true);
         lv_obj_set_scrollable(tile, false);
         lv_group_add_obj(input::group(), tile);
 
-        lv_obj_t* label = lv_label_create(tile);
-        lv_label_set_text_fmt(label, "%s\n%s", entry.icon, entry.name);
-        lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_center(label);
+        lv_obj_t* icon = lv_label_create(tile);
+        lv_label_set_text(icon, entry.icon);
+        lv_obj_set_style_text_font(icon, theme::uiFontLarge(), 0);
+        lv_obj_set_style_text_color(icon, theme::text(), 0);
+        lv_obj_align(icon, LV_ALIGN_TOP_MID, 0, 8);
 
-        lv_obj_add_event_cb(tile, tileEventCb, LV_EVENT_CLICKED,
-                            const_cast<Entry*>(&entry));
+        lv_obj_t* name = lv_label_create(tile);
+        lv_label_set_text(name, entry.name);
+        lv_obj_set_style_text_font(name, theme::uiFont(), 0);
+        lv_obj_align(name, LV_ALIGN_TOP_MID, 0, 36);
+
+        lv_obj_t* status = lv_label_create(tile);
+        lv_label_set_long_mode(status, LV_LABEL_LONG_DOT);
+        lv_obj_set_width(status, 86);
+        lv_obj_set_style_text_align(status, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_text_font(status, theme::uiFontSmall(), 0);
+        lv_obj_set_style_text_color(status, theme::textDim(), 0);
+        lv_label_set_text(status, "");
+        lv_obj_align(status, LV_ALIGN_BOTTOM_MID, 0, -4);
+
+        lv_obj_t* dot = lv_obj_create(tile);
+        lv_obj_remove_style_all(dot);
+        lv_obj_set_size(dot, 6, 6);
+        lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_bg_color(dot, theme::accent(), 0);
+        lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
+        lv_obj_align(dot, LV_ALIGN_TOP_RIGHT, -3, 3);
+        lv_obj_set_hidden(dot, true);
+
+        lv_obj_add_event_cb(tile, tileEventCb, LV_EVENT_CLICKED, const_cast<Entry*>(&entry));
+        s_tiles.push_back({status, dot});
     }
 
+    if (lv_obj_get_child_count(s_grid) > 0) {
+        lv_group_focus_obj(lv_obj_get_child(s_grid, 0));
+    }
     tick();
 }
 
 void destroy() {
-    s_subtitle = nullptr;
+    s_grid = nullptr;
+    s_tiles.clear();
 }
 
 void tick() {
-    if (!s_subtitle) return;
+    if (s_tiles.empty()) return;
 
     static uint32_t lastUpdate = 0;
     const uint32_t  now        = millis();
-    if (now - lastUpdate < 1000) return;
+    if (lastUpdate != 0 && now - lastUpdate < 1000) return;
     lastUpdate = now;
 
-    String text = net::isConnected() ? net::ssid() : String("no network");
-    text += "  " LV_SYMBOL_BULLET "  IRC ";
-    text += ui::irc().stateText();
-    lv_label_set_text(s_subtitle, text.c_str());
+    const size_t count = sizeof(kEntries) / sizeof(kEntries[0]);
+    for (size_t i = 0; i < count && i < s_tiles.size(); i++) {
+        lv_label_set_text(s_tiles[i].status, kEntries[i].status().c_str());
+        const bool active = kEntries[i].active && kEntries[i].active();
+        lv_obj_set_hidden(s_tiles[i].dot, !active);
+    }
 }
 
 } // namespace launcher
