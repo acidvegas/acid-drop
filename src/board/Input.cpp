@@ -132,6 +132,13 @@ void keypadReadCb(lv_indev_t* indev, lv_indev_data_t* data) {
         return;
     }
 
+    // LVGL moves focus with NEXT/PREV; a bare arrow key is delivered to the
+    // focused widget instead. Rolling the ball up and down should walk the
+    // screen, so translate the vertical axis once no app has claimed it.
+    // Horizontal is left alone, so sliders and rollers still adjust.
+    if (key == LV_KEY_UP)   key = LV_KEY_PREV;
+    if (key == LV_KEY_DOWN) key = LV_KEY_NEXT;
+
     s_heldKey     = key;
     s_keyReleased = false;
     data->key     = key;

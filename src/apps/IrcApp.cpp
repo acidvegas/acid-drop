@@ -50,11 +50,9 @@ void updateTitle() {
     IrcClient& client = ui::irc();
     IrcBuffer& buffer = activeBuffer();
 
-    String title = buffer.isStatus() ? String("status") : buffer.name;
-    if (buffer.isChannel() && !buffer.joined) {
-        title += buffer.retryAt != 0 ? " (rejoining)" : " (parted)";
-    }
-    statusbar::setTitle(title + "  " + client.stateText());
+    // Just the window name. The connection state has its own line below, and
+    // the status bar has room for one short word, not two.
+    statusbar::setTitle(buffer.isStatus() ? String("status") : buffer.name);
 
     if (!s_topic) return;
 
@@ -312,6 +310,7 @@ void create(lv_obj_t* parent) {
 void destroy() {
     s_alive = false;
     input::clearKeyHook();
+    statusbar::setTitle("");      // the next app owns the bar, not us
     s_view.setDocument(nullptr);
 
     s_page  = nullptr;

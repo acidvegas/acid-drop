@@ -46,6 +46,15 @@ void begin() {
     sampleBattery();
     applySettings();
 
+    // Keep in step with whoever changes these, wherever they change them.
+    settings::onChange([](const char* key) {
+        if (strcmp(key, "brightness") == 0 || strcmp(key, "dim_level") == 0 ||
+            strcmp(key, "dim_secs")   == 0 || strcmp(key, "off_secs")  == 0 ||
+            strcmp(key, "cpu_mhz")    == 0) {
+            applySettings();
+        }
+    });
+
     LOG_I(TAG, "battery %u mV (%u%%)", s_millivolts, batteryPercent());
 }
 
@@ -137,9 +146,11 @@ void wake() {
         s_screenOn = true;
         display::wake();
     }
-    if (s_dimmed) {
-        s_dimmed = false;
-    }
+    s_dimmed = false;
+
+    // Read the setting rather than a cached copy: anything that changed the
+    // brightness live (the shade slider) would otherwise be undone from here.
+    s_brightness = settings::getInt("brightness");
     display::setBrightness(s_brightness);
 }
 

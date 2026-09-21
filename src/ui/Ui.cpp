@@ -83,6 +83,7 @@ void wireIrcCallbacks() {
 } // namespace
 
 void begin() {
+    LOG_I(TAG, "ui: theme");
     theme::init();
 
     s_root = lv_screen_active();
@@ -91,6 +92,7 @@ void begin() {
     lv_obj_set_flex_flow(s_root, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(s_root, 0, 0);
 
+    LOG_I(TAG, "ui: status bar");
     statusbar::create(s_root);
 
     s_content = lv_obj_create(s_root);
@@ -100,15 +102,20 @@ void begin() {
     lv_obj_set_style_bg_opa(s_content, LV_OPA_COVER, 0);
     lv_obj_set_scrollable(s_content, false);
 
+    LOG_I(TAG, "ui: shade");
     shade::create();
 
+    LOG_I(TAG, "ui: channels");
     channels::begin();
+    LOG_I(TAG, "ui: irc");
     s_irc.begin();
     wireIrcCallbacks();
 
     // Where to land after boot.
     const uint8_t bootApp = settings::getEnum("boot_app");
+    LOG_I(TAG, "ui: opening app (boot_app=%u)", bootApp);
     openApp(bootApp == 1 ? AppId::Irc : AppId::Launcher);
+    LOG_I(TAG, "ui: app open");
 
     if (settings::getBool("irc_autoconn")) s_irc.connect();
 }
@@ -149,6 +156,8 @@ void openApp(AppId id) {
         hooksFor(s_current).destroy();
         lv_obj_clean(s_content);
     }
+
+    statusbar::setTitle("");   // apps that want a title set one in create()
 
     s_current  = id;
     s_appBuilt = true;

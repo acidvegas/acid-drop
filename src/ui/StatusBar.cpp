@@ -138,7 +138,10 @@ void create(lv_obj_t* parent) {
     lv_obj_set_style_text_font(s_title, theme::uiFontSmall(), 0);
     lv_obj_set_style_text_color(s_title, theme::textDim(), 0);
     lv_label_set_long_mode(s_title, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(s_title, 120);
+    lv_obj_set_width(s_title, 110);
+    // One line, always: the bar is 26px tall and a wrapped title overflows it.
+    lv_obj_set_height(s_title, LV_SIZE_CONTENT);
+    lv_obj_set_style_max_height(s_title, 14, 0);
     lv_obj_set_style_text_align(s_title, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(s_title, "");
     lv_obj_align(s_title, LV_ALIGN_CENTER, 0, 0);

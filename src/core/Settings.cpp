@@ -87,48 +87,48 @@ const std::vector<SettingDef> kDefs = {
     DEF_INT("wifi_retry",  "WiFi",    "Retry delay",      "Seconds between reconnect attempts", 1, 120, 1, "s", 5),
 
     // --- IRC server ------------------------------------------------------
-    DEF_TEXT("irc_server",  "IRC",     "Server",           nullptr, "irc.supernets.org"),
-    DEF_INT("irc_port",    "IRC",     "Port",             nullptr, 1, 65535, 1, nullptr, 6697),
-    DEF_BOOL("irc_tls",     "IRC",     "TLS",              nullptr, 1),
-    DEF_BOOL("irc_tlsverif","IRC",     "Verify certificate", "Off accepts self-signed certificates", 0),
-    DEF_BOOL("irc_fallback","IRC",     "Plaintext fallback", "Retry on port 6667 if TLS fails", 1),
-    DEF_BOOL("irc_autoconn","IRC",     "Connect on boot",  nullptr, 1),
-    DEF_TEXT("irc_nick",    "IRC",     "Nick",             nullptr, ""),
-    DEF_TEXT("irc_altnick", "IRC",     "Alternate nick",   "Used if the first one is taken", ""),
-    DEF_TEXT("irc_user",    "IRC",     "Username",         nullptr, "tdeck"),
-    DEF_TEXT("irc_real",    "IRC",     "Real name",        nullptr, "ACID DROP"),
-    DEF_TEXT("irc_quitmsg", "IRC",     "Quit message",     nullptr, "ACID DROP"),
+    DEF_TEXT("irc_server",  "Server", "Server",           nullptr, "irc.supernets.org"),
+    DEF_INT("irc_port",    "Server", "Port",             nullptr, 1, 65535, 1, nullptr, 6697),
+    DEF_BOOL("irc_tls",     "Server", "TLS",              nullptr, 1),
+    DEF_BOOL("irc_tlsverif","Server", "Verify certificate", "Off accepts self-signed certificates", 0),
+    DEF_BOOL("irc_fallback","Server", "Plaintext fallback", "Retry on port 6667 if TLS fails", 1),
+    DEF_BOOL("irc_autoconn","Server", "Connect on boot",  nullptr, 1),
+    DEF_TEXT("irc_nick",    "Identity", "Nick",             nullptr, ""),
+    DEF_TEXT("irc_altnick", "Identity", "Alternate nick",   "Used if the first one is taken", ""),
+    DEF_TEXT("irc_user",    "Identity", "Username",         nullptr, "tdeck"),
+    DEF_TEXT("irc_real",    "Identity", "Real name",        nullptr, "ACID DROP"),
+    DEF_TEXT("irc_quitmsg", "Identity", "Quit message",     nullptr, "ACID DROP"),
 
     // --- IRC auth --------------------------------------------------------
-    DEF_BOOL("irc_sasl",    "IRC auth", "SASL PLAIN",      "Authenticate during connection registration", 0),
-    DEF_TEXT("irc_saslusr", "IRC auth", "SASL account",    "Defaults to your nick when empty", ""),
-    DEF_SECRET("irc_saslpass","IRC auth", "SASL password",   nullptr, ""),
-    DEF_SECRET("irc_nspass",  "IRC auth", "NickServ password", "Sent as IDENTIFY after connecting, if SASL is off", ""),
+    DEF_BOOL("irc_sasl",    "Authentication", "SASL PLAIN",      "Authenticate during connection registration", 0),
+    DEF_TEXT("irc_saslusr", "Authentication", "SASL account",    "Defaults to your nick when empty", ""),
+    DEF_SECRET("irc_saslpass","Authentication", "SASL password",   nullptr, ""),
+    DEF_SECRET("irc_nspass",  "Authentication", "NickServ password", "Sent as IDENTIFY after connecting, if SASL is off", ""),
 
     // --- IRC timing (the reconnect/rejoin behaviour) ---------------------
-    DEF_INT("irc_joindly", "IRC timing", "Join delay",     "Wait this long after the welcome (001) before joining", 0, 60000, 500, "ms", 6000),
-    DEF_BOOL("irc_recon",   "IRC timing", "Auto-reconnect", nullptr, 1),
-    DEF_INT("irc_recondly","IRC timing", "Reconnect delay","First retry waits this long, then backs off", 1, 300, 1, "s", 5),
-    DEF_INT("irc_reconmax","IRC timing", "Max backoff",    "Reconnect delay never exceeds this", 5, 900, 5, "s", 120),
-    DEF_BOOL("irc_rejoin",  "IRC timing", "Rejoin on kick", nullptr, 1),
-    DEF_INT("irc_kickdly", "IRC timing", "Kick rejoin delay", nullptr, 1, 300, 1, "s", 3),
-    DEF_BOOL("irc_retryjn", "IRC timing", "Retry failed joins", "Keep trying when a channel is +i, +k, +b or full", 1),
-    DEF_INT("irc_lockdly", "IRC timing", "Join retry delay", nullptr, 1, 300, 1, "s", 5),
-    DEF_INT("irc_pingout", "IRC timing", "Ping timeout",   "Drop the link if the server is silent this long", 30, 900, 10, "s", 260),
+    DEF_INT("irc_joindly", "Connection", "Join delay",     "Wait this long after the welcome (001) before joining", 0, 60000, 500, "ms", 6000),
+    DEF_BOOL("irc_recon",   "Connection", "Auto-reconnect", nullptr, 1),
+    DEF_INT("irc_recondly","Connection", "Reconnect delay","First retry waits this long, then backs off", 1, 300, 1, "s", 5),
+    DEF_INT("irc_reconmax","Connection", "Max backoff",    "Reconnect delay never exceeds this", 5, 900, 5, "s", 120),
+    DEF_BOOL("irc_rejoin",  "Connection", "Rejoin on kick", nullptr, 1),
+    DEF_INT("irc_kickdly", "Connection", "Kick rejoin delay", nullptr, 1, 300, 1, "s", 3),
+    DEF_BOOL("irc_retryjn", "Connection", "Retry failed joins", "Keep trying when a channel is +i, +k, +b or full", 1),
+    DEF_INT("irc_lockdly", "Connection", "Join retry delay", nullptr, 1, 300, 1, "s", 5),
+    DEF_INT("irc_pingout", "Connection", "Ping timeout",   "Drop the link if the server is silent this long", 30, 900, 10, "s", 260),
 
     // --- IRC display -----------------------------------------------------
-    DEF_BOOL("irc_colors",  "IRC display", "mIRC colors",   "Render ^C colour codes", 1),
-    DEF_BOOL("irc_bgcolor", "IRC display", "Background colors", "Needed for ANSI art drawn with coloured spaces", 1),
-    DEF_BOOL("irc_ansi",    "IRC display", "ANSI escapes",  "Also parse ESC[ SGR sequences", 1),
-    DEF_BOOL("irc_format",  "IRC display", "Bold/italic/underline", "Render ^B ^] ^_ and reverse video", 1),
-    DEF_ENUM("irc_nickcol", "IRC display", "Nick colors",   "Hashed keeps a nick the same colour every session", kOptNickColor, 1),
-    DEF_ENUM("irc_ts",      "IRC display", "Timestamps",    nullptr, kOptTimestamp, 1),
-    DEF_BOOL("irc_joinpart","IRC display", "Show joins/parts", nullptr, 1),
-    DEF_BOOL("irc_showmode","IRC display", "Show mode changes", nullptr, 1),
-    DEF_BOOL("irc_showraw", "IRC display", "Raw server lines", "Mirror everything into the status window", 1),
-    DEF_INT("irc_scrollbk","IRC display", "Scrollback",    "Lines kept per window, held in PSRAM", 100, 5000, 100, "lines", 1000),
-    DEF_TEXT("irc_hilight", "IRC display", "Highlight words", "Comma separated, in addition to your nick", ""),
-    DEF_BOOL("irc_beepctcp","IRC display", "Allow CTCP",    "Answer VERSION, PING and TIME requests", 1),
+    DEF_BOOL("irc_colors",  "Appearance", "mIRC colors",   "Render ^C colour codes", 1),
+    DEF_BOOL("irc_bgcolor", "Appearance", "Background colors", "Needed for ANSI art drawn with coloured spaces", 1),
+    DEF_BOOL("irc_ansi",    "Appearance", "ANSI escapes",  "Also parse ESC[ SGR sequences", 1),
+    DEF_BOOL("irc_format",  "Appearance", "Bold/italic/underline", "Render ^B ^] ^_ and reverse video", 1),
+    DEF_ENUM("irc_nickcol", "Appearance", "Nick colors",   "Hashed keeps a nick the same colour every session", kOptNickColor, 1),
+    DEF_ENUM("irc_ts",      "Appearance", "Timestamps",    nullptr, kOptTimestamp, 1),
+    DEF_BOOL("irc_joinpart","Appearance", "Show joins/parts", nullptr, 1),
+    DEF_BOOL("irc_showmode","Appearance", "Show mode changes", nullptr, 1),
+    DEF_BOOL("irc_showraw", "Appearance", "Raw server lines", "Mirror everything into the status window", 1),
+    DEF_INT("irc_scrollbk","Appearance", "Scrollback",    "Lines kept per window, held in PSRAM", 100, 5000, 100, "lines", 1000),
+    DEF_TEXT("irc_hilight", "Appearance", "Highlight words", "Comma separated, in addition to your nick", ""),
+    DEF_BOOL("irc_beepctcp","Appearance", "Allow CTCP",    "Answer VERSION, PING and TIME requests", 1),
 
     // --- GPS -------------------------------------------------------------
     DEF_BOOL("gps_enable",  "GPS",     "GPS",              "T-Deck Plus only", 1),
@@ -240,9 +240,15 @@ const SettingDef* find(const char* key) {
 }
 
 const char* groupOf(const char* section) {
-    // Every IRC section is named "IRC...", so one prefix test keeps the
-    // registry free of an extra column on all ninety rows.
-    return strncmp(section, "IRC", 3) == 0 ? kGroupIrc : kGroupSystem;
+    // Listed explicitly rather than inferred from the name, so the sections can
+    // be titled for the person reading them instead of for a prefix test.
+    static const char* const kIrcSections[] = {
+        "Server", "Identity", "Authentication", "Connection", "Appearance", nullptr
+    };
+    for (const char* const* name = kIrcSections; *name; name++) {
+        if (strcmp(*name, section) == 0) return kGroupIrc;
+    }
+    return kGroupSystem;
 }
 
 std::vector<const char*> sections(const char* group) {
