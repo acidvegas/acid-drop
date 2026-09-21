@@ -25,6 +25,15 @@ const char* levelName(LogLevel level) {
 
 void begin(unsigned long baud) {
     Serial.begin(baud);
+
+    // USB-CDC blocks when it believes a terminal is attached but nothing is
+    // reading - which is exactly the state the board is in after a flash, and
+    // it is enough to wedge the whole firmware from inside a log call. Drop
+    // output instead of waiting for a reader.
+#if ARDUINO_USB_CDC_ON_BOOT
+    Serial.setTxTimeoutMs(0);
+#endif
+
     s_entries.reserve(kMaxEntries);
 }
 
@@ -64,6 +73,17 @@ void write(LogLevel level, const char* tag, const char* fmt, ...) {
 }
 
 const std::vector<LogEntry>& entries() { return s_entries; }
+
+void replay() {
+    Serial.printf("\n--- replaying %u buffered log lines ---\n", (unsigned)s_entries.size());
+    for (const LogEntry& entry : s_entries) {
+        Serial.printf("[%8lu][%s][%s] %s\n",
+                      static_cast<unsigned long>(entry.ms), levelName(entry.level),
+                      entry.tag.c_str(), entry.message.c_str());
+    }
+    Serial.println("--- end of replay ---");
+}
+
 
 void clear() { s_entries.clear(); }
 

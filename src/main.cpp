@@ -136,7 +136,9 @@ void setup() {
     bootStage("ui");
     ui::begin();
 
-    bootStage("running");
+    // Draw the first frame here rather than waiting for loop(). If anything
+    // later stalls, the UI is already on screen instead of the boot logo.
+    lv_refr_now(nullptr);
 
     LOG_I(TAG, "boot complete, %u KB heap free", ESP.getFreeHeap() / 1024);
 }
