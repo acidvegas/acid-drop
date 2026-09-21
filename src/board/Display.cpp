@@ -1,7 +1,6 @@
 #include "board/Display.h"
 
 #include <Arduino.h>
-#include <Wire.h>
 #include <esp_heap_caps.h>
 
 #include "board/pins.h"
@@ -123,16 +122,36 @@ uint32_t tickCb() {
 } // namespace
 
 bool begin() {
-    // Bring the bus up first so the controller can be probed: LovyanGFX only
-    // tries the address it is configured with.
+    // Find the controller before init: LovyanGFX only tries the address it is
+    // configured with, and these ship strapped to 0x5D or 0x14 depending on
+    // the level on the interrupt line at power-up.
+    //
+    // Probed by reading the product ID register rather than by doing a bare
+    // read. A read with no register pointer set is not a transaction the GT911
+    // is obliged to answer, so it can fail on a chip that is present and
+    // working - and a failed probe here silently leaves the wrong address
+    // configured, which looks exactly like the touchscreen being dead.
     lgfx::i2c::init(0, BOARD_I2C_SDA, BOARD_I2C_SCL);
+
+    bool found = false;
     for (uint8_t candidate : {TOUCH_I2C_ADDR_PRI, TOUCH_I2C_ADDR_ALT}) {
-        uint8_t probe = 0;
-        if (lgfx::i2c::transactionRead(0, candidate, &probe, 1, BOARD_I2C_FREQ).has_value()) {
+        const uint8_t reg[2] = {0x81, 0x40};   // GT911 product ID, four bytes
+        uint8_t id[4] = {0, 0, 0, 0};
+
+        if (lgfx::i2c::transactionWriteRead(0, candidate, reg, sizeof(reg),
+                                            id, sizeof(id), BOARD_I2C_FREQ).has_value()) {
             gfx.setTouchAddress(candidate);
-            LOG_I("display", "GT911 at 0x%02X", candidate);
+            LOG_I("display", "GT911 at 0x%02X (id %c%c%c%c)", candidate,
+                  isprint(id[0]) ? id[0] : '?', isprint(id[1]) ? id[1] : '?',
+                  isprint(id[2]) ? id[2] : '?', isprint(id[3]) ? id[3] : '?');
+            found = true;
             break;
         }
+    }
+
+    if (!found) {
+        LOG_E("display", "no touch controller answered at 0x%02X or 0x%02X - touch will not work",
+              TOUCH_I2C_ADDR_PRI, TOUCH_I2C_ADDR_ALT);
     }
 
     if (!gfx.init()) {
