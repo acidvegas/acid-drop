@@ -31,131 +31,135 @@ const char* const kOptClock[]       = {"12 hour", "24 hour", nullptr};
 // --- the registry ---------------------------------------------------------
 // Columns: key, section, label, help, type, min, max, step, scale, unit,
 //          options, defNum, defText, secret, needsRestart
-#define B(k, sec, lbl, help, def)                    {k, sec, lbl, help, SettingType::Bool,  0, 1, 1, 1, nullptr, nullptr, def, nullptr, false, false}
-#define I(k, sec, lbl, help, lo, hi, st, unit, def)  {k, sec, lbl, help, SettingType::Int,   lo, hi, st, 1, unit, nullptr, def, nullptr, false, false}
-#define F(k, sec, lbl, help, lo, hi, st, sc, unit, def) {k, sec, lbl, help, SettingType::Float, lo, hi, st, sc, unit, nullptr, def, nullptr, false, false}
-#define T(k, sec, lbl, help, def)                    {k, sec, lbl, help, SettingType::Text,  0, 0, 0, 1, nullptr, nullptr, 0, def, false, false}
-#define S(k, sec, lbl, help, def)                    {k, sec, lbl, help, SettingType::Text,  0, 0, 0, 1, nullptr, nullptr, 0, def, true,  false}
-#define E(k, sec, lbl, help, opts, def)              {k, sec, lbl, help, SettingType::Enum,  0, 0, 1, 1, nullptr, opts,    def, nullptr, false, false}
+//
+// These are spelled DEF_* rather than the obvious single letters because F()
+// and friends are already Arduino macros, and #undef-ing them here would take
+// Arduino's versions away from the rest of the translation unit.
+#define DEF_BOOL(k, sec, lbl, help, def)                    {k, sec, lbl, help, SettingType::Bool,  0, 1, 1, 1, nullptr, nullptr, def, nullptr, false, false}
+#define DEF_INT(k, sec, lbl, help, lo, hi, st, unit, def)  {k, sec, lbl, help, SettingType::Int,   lo, hi, st, 1, unit, nullptr, def, nullptr, false, false}
+#define DEF_FLOAT(k, sec, lbl, help, lo, hi, st, sc, unit, def) {k, sec, lbl, help, SettingType::Float, lo, hi, st, sc, unit, nullptr, def, nullptr, false, false}
+#define DEF_TEXT(k, sec, lbl, help, def)                    {k, sec, lbl, help, SettingType::Text,  0, 0, 0, 1, nullptr, nullptr, 0, def, false, false}
+#define DEF_SECRET(k, sec, lbl, help, def)                    {k, sec, lbl, help, SettingType::Text,  0, 0, 0, 1, nullptr, nullptr, 0, def, true,  false}
+#define DEF_ENUM(k, sec, lbl, help, opts, def)              {k, sec, lbl, help, SettingType::Enum,  0, 0, 1, 1, nullptr, opts,    def, nullptr, false, false}
 
 const std::vector<SettingDef> kDefs = {
     // --- Device ----------------------------------------------------------
-    T("dev_name",    "Device",  "Device name",      "Shown on the lock screen and used as the WiFi hostname", "acid-drop"),
-    E("clock_fmt",   "Device",  "Clock format",     nullptr, kOptClock, 0),
-    I("tz_offset",   "Device",  "UTC offset",       "Minutes ahead of UTC. -300 is US Eastern.", -720, 840, 15, "min", -300),
-    B("dst",         "Device",  "Daylight saving",  "Adds one hour while in effect", 1),
-    B("ntp_enable",  "Device",  "Sync clock (NTP)", "Requires WiFi", 1),
-    T("ntp_server",  "Device",  "NTP server",       nullptr, "pool.ntp.org"),
-    E("boot_app",    "Device",  "Start in",         "Which screen to show after boot", kOptBootApp, 1),
+    DEF_TEXT("dev_name",    "Device",  "Device name",      "Shown on the lock screen and used as the WiFi hostname", "acid-drop"),
+    DEF_ENUM("clock_fmt",   "Device",  "Clock format",     nullptr, kOptClock, 0),
+    DEF_INT("tz_offset",   "Device",  "UTC offset",       "Minutes ahead of UTC. -300 is US Eastern.", -720, 840, 15, "min", -300),
+    DEF_BOOL("dst",         "Device",  "Daylight saving",  "Adds one hour while in effect", 1),
+    DEF_BOOL("ntp_enable",  "Device",  "Sync clock (NTP)", "Requires WiFi", 1),
+    DEF_TEXT("ntp_server",  "Device",  "NTP server",       nullptr, "pool.ntp.org"),
+    DEF_ENUM("boot_app",    "Device",  "Start in",         "Which screen to show after boot", kOptBootApp, 1),
 
     // --- Display ---------------------------------------------------------
-    I("brightness",  "Display", "Brightness",       nullptr, 5, 255, 5, nullptr, 200),
-    I("dim_secs",    "Display", "Dim after",        "Seconds of inactivity before dimming. 0 disables.", 0, 600, 5, "s", 20),
-    I("off_secs",    "Display", "Screen off after", "Seconds of inactivity before the backlight goes out. 0 disables.", 0, 1800, 10, "s", 60),
-    I("dim_level",   "Display", "Dim level",        nullptr, 1, 128, 1, nullptr, 25),
-    E("rotation",    "Display", "Orientation",      nullptr, kOptRotation, 0),
-    E("term_font",   "Display", "Chat font size",   "The message grid is sized from this", kOptTermFont, 0),
-    I("term_linesp", "Display", "Line spacing",     "Extra pixels between chat rows", -2, 8, 1, "px", 0),
-    B("sb_seconds",  "Display", "Seconds in clock", "Show seconds in the status bar", 0),
-    B("sb_battpct",  "Display", "Battery percent",  "Show the number next to the battery icon", 1),
+    DEF_INT("brightness",  "Display", "Brightness",       nullptr, 5, 255, 5, nullptr, 200),
+    DEF_INT("dim_secs",    "Display", "Dim after",        "Seconds of inactivity before dimming. 0 disables.", 0, 600, 5, "s", 20),
+    DEF_INT("off_secs",    "Display", "Screen off after", "Seconds of inactivity before the backlight goes out. 0 disables.", 0, 1800, 10, "s", 60),
+    DEF_INT("dim_level",   "Display", "Dim level",        nullptr, 1, 128, 1, nullptr, 25),
+    DEF_ENUM("rotation",    "Display", "Orientation",      nullptr, kOptRotation, 0),
+    DEF_ENUM("term_font",   "Display", "Chat font size",   "The message grid is sized from this", kOptTermFont, 0),
+    DEF_INT("term_linesp", "Display", "Line spacing",     "Extra pixels between chat rows", -2, 8, 1, "px", 0),
+    DEF_BOOL("sb_seconds",  "Display", "Seconds in clock", "Show seconds in the status bar", 0),
+    DEF_BOOL("sb_battpct",  "Display", "Battery percent",  "Show the number next to the battery icon", 1),
 
     // --- Sound -----------------------------------------------------------
-    B("snd_enable",  "Sound",   "Sound",            nullptr, 1),
-    I("snd_volume",  "Sound",   "Volume",           nullptr, 0, 21, 1, nullptr, 12),
-    B("snd_boot",    "Sound",   "Boot jingle",      nullptr, 1),
-    B("snd_mention", "Sound",   "Mention alert",    "Beep when your nick is said", 1),
-    B("snd_msg",     "Sound",   "Private message",  "Beep on a new PM", 1),
-    B("snd_connect", "Sound",   "Connect / drop",   "Beep when IRC connects or disconnects", 0),
-    B("snd_key",     "Sound",   "Key clicks",       nullptr, 0),
+    DEF_BOOL("snd_enable",  "Sound",   "Sound",            nullptr, 1),
+    DEF_INT("snd_volume",  "Sound",   "Volume",           nullptr, 0, 21, 1, nullptr, 12),
+    DEF_BOOL("snd_boot",    "Sound",   "Boot jingle",      nullptr, 1),
+    DEF_BOOL("snd_mention", "Sound",   "Mention alert",    "Beep when your nick is said", 1),
+    DEF_BOOL("snd_msg",     "Sound",   "Private message",  "Beep on a new PM", 1),
+    DEF_BOOL("snd_connect", "Sound",   "Connect / drop",   "Beep when IRC connects or disconnects", 0),
+    DEF_BOOL("snd_key",     "Sound",   "Key clicks",       nullptr, 0),
 
     // --- Power -----------------------------------------------------------
-    E("cpu_mhz",     "Power",   "CPU speed",        "Lower is cooler and lasts longer", kOptCpuMhz, 2),
-    B("wifi_ps",     "Power",   "WiFi power save",  "Saves power, adds latency to IRC", 0),
-    I("batt_warn",   "Power",   "Low battery at",   "Warn below this charge", 5, 50, 5, "%", 15),
-    B("batt_beep",   "Power",   "Low battery beep", nullptr, 1),
+    DEF_ENUM("cpu_mhz",     "Power",   "CPU speed",        "Lower is cooler and lasts longer", kOptCpuMhz, 2),
+    DEF_BOOL("wifi_ps",     "Power",   "WiFi power save",  "Saves power, adds latency to IRC", 0),
+    DEF_INT("batt_warn",   "Power",   "Low battery at",   "Warn below this charge", 5, 50, 5, "%", 15),
+    DEF_BOOL("batt_beep",   "Power",   "Low battery beep", nullptr, 1),
 
     // --- WiFi ------------------------------------------------------------
-    B("wifi_enable", "WiFi",    "WiFi",             nullptr, 1),
-    B("wifi_auto",   "WiFi",    "Auto-connect",     "Reconnect to the saved network on boot", 1),
-    T("wifi_ssid",   "WiFi",    "SSID",             nullptr, ""),
-    S("wifi_pass",   "WiFi",    "Password",         nullptr, ""),
-    B("wifi_macrnd", "WiFi",    "Randomize MAC",    "New MAC address on every connect", 0),
-    I("wifi_retry",  "WiFi",    "Retry delay",      "Seconds between reconnect attempts", 1, 120, 1, "s", 5),
+    DEF_BOOL("wifi_enable", "WiFi",    "WiFi",             nullptr, 1),
+    DEF_BOOL("wifi_auto",   "WiFi",    "Auto-connect",     "Reconnect to the saved network on boot", 1),
+    DEF_TEXT("wifi_ssid",   "WiFi",    "SSID",             nullptr, ""),
+    DEF_SECRET("wifi_pass",   "WiFi",    "Password",         nullptr, ""),
+    DEF_BOOL("wifi_macrnd", "WiFi",    "Randomize MAC",    "New MAC address on every connect", 0),
+    DEF_INT("wifi_retry",  "WiFi",    "Retry delay",      "Seconds between reconnect attempts", 1, 120, 1, "s", 5),
 
     // --- IRC server ------------------------------------------------------
-    T("irc_server",  "IRC",     "Server",           nullptr, "irc.supernets.org"),
-    I("irc_port",    "IRC",     "Port",             nullptr, 1, 65535, 1, nullptr, 6697),
-    B("irc_tls",     "IRC",     "TLS",              nullptr, 1),
-    B("irc_tlsverif","IRC",     "Verify certificate", "Off accepts self-signed certificates", 0),
-    B("irc_fallback","IRC",     "Plaintext fallback", "Retry on port 6667 if TLS fails", 1),
-    B("irc_autoconn","IRC",     "Connect on boot",  nullptr, 1),
-    T("irc_nick",    "IRC",     "Nick",             nullptr, ""),
-    T("irc_altnick", "IRC",     "Alternate nick",   "Used if the first one is taken", ""),
-    T("irc_user",    "IRC",     "Username",         nullptr, "tdeck"),
-    T("irc_real",    "IRC",     "Real name",        nullptr, "ACID DROP"),
-    T("irc_chans",   "IRC",     "Channels",         "Comma separated, joined in order", "#superbowl"),
-    T("irc_quitmsg", "IRC",     "Quit message",     nullptr, "ACID DROP"),
+    DEF_TEXT("irc_server",  "IRC",     "Server",           nullptr, "irc.supernets.org"),
+    DEF_INT("irc_port",    "IRC",     "Port",             nullptr, 1, 65535, 1, nullptr, 6697),
+    DEF_BOOL("irc_tls",     "IRC",     "TLS",              nullptr, 1),
+    DEF_BOOL("irc_tlsverif","IRC",     "Verify certificate", "Off accepts self-signed certificates", 0),
+    DEF_BOOL("irc_fallback","IRC",     "Plaintext fallback", "Retry on port 6667 if TLS fails", 1),
+    DEF_BOOL("irc_autoconn","IRC",     "Connect on boot",  nullptr, 1),
+    DEF_TEXT("irc_nick",    "IRC",     "Nick",             nullptr, ""),
+    DEF_TEXT("irc_altnick", "IRC",     "Alternate nick",   "Used if the first one is taken", ""),
+    DEF_TEXT("irc_user",    "IRC",     "Username",         nullptr, "tdeck"),
+    DEF_TEXT("irc_real",    "IRC",     "Real name",        nullptr, "ACID DROP"),
+    DEF_TEXT("irc_chans",   "IRC",     "Channels",         "Comma separated, joined in order", "#superbowl"),
+    DEF_TEXT("irc_quitmsg", "IRC",     "Quit message",     nullptr, "ACID DROP"),
 
     // --- IRC auth --------------------------------------------------------
-    B("irc_sasl",    "IRC auth", "SASL PLAIN",      "Authenticate during connection registration", 0),
-    T("irc_saslusr", "IRC auth", "SASL account",    "Defaults to your nick when empty", ""),
-    S("irc_saslpass","IRC auth", "SASL password",   nullptr, ""),
-    S("irc_nspass",  "IRC auth", "NickServ password", "Sent as IDENTIFY after connecting, if SASL is off", ""),
+    DEF_BOOL("irc_sasl",    "IRC auth", "SASL PLAIN",      "Authenticate during connection registration", 0),
+    DEF_TEXT("irc_saslusr", "IRC auth", "SASL account",    "Defaults to your nick when empty", ""),
+    DEF_SECRET("irc_saslpass","IRC auth", "SASL password",   nullptr, ""),
+    DEF_SECRET("irc_nspass",  "IRC auth", "NickServ password", "Sent as IDENTIFY after connecting, if SASL is off", ""),
 
     // --- IRC timing (the reconnect/rejoin behaviour) ---------------------
-    I("irc_joindly", "IRC timing", "Join delay",     "Wait this long after the welcome (001) before joining", 0, 60000, 500, "ms", 6000),
-    B("irc_recon",   "IRC timing", "Auto-reconnect", nullptr, 1),
-    I("irc_recondly","IRC timing", "Reconnect delay","First retry waits this long, then backs off", 1, 300, 1, "s", 5),
-    I("irc_reconmax","IRC timing", "Max backoff",    "Reconnect delay never exceeds this", 5, 900, 5, "s", 120),
-    B("irc_rejoin",  "IRC timing", "Rejoin on kick", nullptr, 1),
-    I("irc_kickdly", "IRC timing", "Kick rejoin delay", nullptr, 1, 300, 1, "s", 3),
-    B("irc_retryjn", "IRC timing", "Retry failed joins", "Keep trying when a channel is +i, +k, +b or full", 1),
-    I("irc_lockdly", "IRC timing", "Join retry delay", nullptr, 1, 300, 1, "s", 5),
-    I("irc_pingout", "IRC timing", "Ping timeout",   "Drop the link if the server is silent this long", 30, 900, 10, "s", 260),
+    DEF_INT("irc_joindly", "IRC timing", "Join delay",     "Wait this long after the welcome (001) before joining", 0, 60000, 500, "ms", 6000),
+    DEF_BOOL("irc_recon",   "IRC timing", "Auto-reconnect", nullptr, 1),
+    DEF_INT("irc_recondly","IRC timing", "Reconnect delay","First retry waits this long, then backs off", 1, 300, 1, "s", 5),
+    DEF_INT("irc_reconmax","IRC timing", "Max backoff",    "Reconnect delay never exceeds this", 5, 900, 5, "s", 120),
+    DEF_BOOL("irc_rejoin",  "IRC timing", "Rejoin on kick", nullptr, 1),
+    DEF_INT("irc_kickdly", "IRC timing", "Kick rejoin delay", nullptr, 1, 300, 1, "s", 3),
+    DEF_BOOL("irc_retryjn", "IRC timing", "Retry failed joins", "Keep trying when a channel is +i, +k, +b or full", 1),
+    DEF_INT("irc_lockdly", "IRC timing", "Join retry delay", nullptr, 1, 300, 1, "s", 5),
+    DEF_INT("irc_pingout", "IRC timing", "Ping timeout",   "Drop the link if the server is silent this long", 30, 900, 10, "s", 260),
 
     // --- IRC display -----------------------------------------------------
-    B("irc_colors",  "IRC display", "mIRC colors",   "Render ^C colour codes", 1),
-    B("irc_bgcolor", "IRC display", "Background colors", "Needed for ANSI art drawn with coloured spaces", 1),
-    B("irc_ansi",    "IRC display", "ANSI escapes",  "Also parse ESC[ SGR sequences", 1),
-    B("irc_format",  "IRC display", "Bold/italic/underline", "Render ^B ^] ^_ and reverse video", 1),
-    E("irc_nickcol", "IRC display", "Nick colors",   "Hashed keeps a nick the same colour every session", kOptNickColor, 1),
-    E("irc_ts",      "IRC display", "Timestamps",    nullptr, kOptTimestamp, 1),
-    B("irc_joinpart","IRC display", "Show joins/parts", nullptr, 1),
-    B("irc_showmode","IRC display", "Show mode changes", nullptr, 1),
-    B("irc_showraw", "IRC display", "Raw server lines", "Mirror everything into the status window", 1),
-    I("irc_scrollbk","IRC display", "Scrollback",    "Lines kept per window, held in PSRAM", 100, 5000, 100, "lines", 1000),
-    T("irc_hilight", "IRC display", "Highlight words", "Comma separated, in addition to your nick", ""),
-    B("irc_beepctcp","IRC display", "Allow CTCP",    "Answer VERSION, PING and TIME requests", 1),
+    DEF_BOOL("irc_colors",  "IRC display", "mIRC colors",   "Render ^C colour codes", 1),
+    DEF_BOOL("irc_bgcolor", "IRC display", "Background colors", "Needed for ANSI art drawn with coloured spaces", 1),
+    DEF_BOOL("irc_ansi",    "IRC display", "ANSI escapes",  "Also parse ESC[ SGR sequences", 1),
+    DEF_BOOL("irc_format",  "IRC display", "Bold/italic/underline", "Render ^B ^] ^_ and reverse video", 1),
+    DEF_ENUM("irc_nickcol", "IRC display", "Nick colors",   "Hashed keeps a nick the same colour every session", kOptNickColor, 1),
+    DEF_ENUM("irc_ts",      "IRC display", "Timestamps",    nullptr, kOptTimestamp, 1),
+    DEF_BOOL("irc_joinpart","IRC display", "Show joins/parts", nullptr, 1),
+    DEF_BOOL("irc_showmode","IRC display", "Show mode changes", nullptr, 1),
+    DEF_BOOL("irc_showraw", "IRC display", "Raw server lines", "Mirror everything into the status window", 1),
+    DEF_INT("irc_scrollbk","IRC display", "Scrollback",    "Lines kept per window, held in PSRAM", 100, 5000, 100, "lines", 1000),
+    DEF_TEXT("irc_hilight", "IRC display", "Highlight words", "Comma separated, in addition to your nick", ""),
+    DEF_BOOL("irc_beepctcp","IRC display", "Allow CTCP",    "Answer VERSION, PING and TIME requests", 1),
 
     // --- GPS -------------------------------------------------------------
-    B("gps_enable",  "GPS",     "GPS",              "T-Deck Plus only", 1),
-    I("gps_baud",    "GPS",     "Baud rate",        nullptr, 4800, 115200, 4800, nullptr, 9600),
-    B("gps_statbar", "GPS",     "Status bar icon",  nullptr, 1),
+    DEF_BOOL("gps_enable",  "GPS",     "GPS",              "T-Deck Plus only", 1),
+    DEF_INT("gps_baud",    "GPS",     "Baud rate",        nullptr, 4800, 115200, 4800, nullptr, 9600),
+    DEF_BOOL("gps_statbar", "GPS",     "Status bar icon",  nullptr, 1),
 
     // --- LoRa ------------------------------------------------------------
-    B("lora_enable", "LoRa",    "LoRa radio",       nullptr, 0),
-    F("lora_freq",   "LoRa",    "Frequency",        nullptr, 40000, 100000, 10, 100, "MHz", 91500),
-    E("lora_bw",     "LoRa",    "Bandwidth",        nullptr, kOptLoraBw, 0),
-    I("lora_sf",     "LoRa",    "Spreading factor", nullptr, 6, 12, 1, nullptr, 9),
-    I("lora_cr",     "LoRa",    "Coding rate",      "4/N", 5, 8, 1, nullptr, 7),
-    I("lora_power",  "LoRa",    "TX power",         nullptr, -9, 22, 1, "dBm", 17),
+    DEF_BOOL("lora_enable", "LoRa",    "LoRa radio",       nullptr, 0),
+    DEF_FLOAT("lora_freq",   "LoRa",    "Frequency",        nullptr, 40000, 100000, 10, 100, "MHz", 91500),
+    DEF_ENUM("lora_bw",     "LoRa",    "Bandwidth",        nullptr, kOptLoraBw, 0),
+    DEF_INT("lora_sf",     "LoRa",    "Spreading factor", nullptr, 6, 12, 1, nullptr, 9),
+    DEF_INT("lora_cr",     "LoRa",    "Coding rate",      "4/N", 5, 8, 1, nullptr, 7),
+    DEF_INT("lora_power",  "LoRa",    "TX power",         nullptr, -9, 22, 1, "dBm", 17),
 
     // --- Bluetooth -------------------------------------------------------
-    B("ble_enable",  "Bluetooth", "Bluetooth",      nullptr, 0),
-    T("ble_name",    "Bluetooth", "Advertised name", nullptr, "acid-drop"),
+    DEF_BOOL("ble_enable",  "Bluetooth", "Bluetooth",      nullptr, 0),
+    DEF_TEXT("ble_name",    "Bluetooth", "Advertised name", nullptr, "acid-drop"),
 
     // --- Advanced --------------------------------------------------------
-    E("log_level",   "Advanced", "Log level",       nullptr, kOptLogLevel, 2),
-    B("log_screen",  "Advanced", "On-screen syslog", "Keep a log ring buffer for the syslog view", 1),
-    B("dev_mode",    "Advanced", "Developer mode",  "Shows raw sockets, heap and frame timing", 0),
+    DEF_ENUM("log_level",   "Advanced", "Log level",       nullptr, kOptLogLevel, 2),
+    DEF_BOOL("log_screen",  "Advanced", "On-screen syslog", "Keep a log ring buffer for the syslog view", 1),
+    DEF_BOOL("dev_mode",    "Advanced", "Developer mode",  "Shows raw sockets, heap and frame timing", 0),
 };
 
-#undef B
-#undef I
-#undef F
-#undef T
-#undef S
-#undef E
+#undef DEF_BOOL
+#undef DEF_INT
+#undef DEF_FLOAT
+#undef DEF_TEXT
+#undef DEF_SECRET
+#undef DEF_ENUM
 
 // --- storage --------------------------------------------------------------
 Preferences               s_prefs;
