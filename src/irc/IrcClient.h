@@ -51,6 +51,8 @@ struct IrcBuffer {
     // Channel state
     bool                joined      = false;
     bool                retryEnabled = true;   // from the saved channel config
+    bool                requested    = false;  // we asked to be here
+    bool                namesLoading = false;  // mid RPL_NAMREPLY batch
     uint32_t            retryAt     = 0;   // millis, 0 when nothing is pending
     uint16_t            retryCount  = 0;
     String              retryReason;       // e.g. "+i", shown while retrying
