@@ -6,6 +6,11 @@
 
 namespace {
 
+// Space reserved down the left edge for the attention marker. Without it the
+// marker overdraws the first character, and the first column sits hard against
+// the screen edge where it gets clipped.
+constexpr int32_t kGutter = 4;
+
 constexpr lv_opa_t kShadeOpa[3] = {LV_OPA_20, LV_OPA_40, LV_OPA_70};  // U+2591..U+2593
 
 // Block-element characters are drawn as rectangles rather than glyphs. A font's
@@ -195,7 +200,7 @@ void TermView::recomputeGeometry() {
     m_cellHeight = m_font->line_height + m_lineSpacing;
     if (m_cellHeight < 4) m_cellHeight = 4;
 
-    const int32_t width  = lv_obj_get_content_width(m_obj);
+    const int32_t width  = lv_obj_get_content_width(m_obj) - kGutter;
     const int32_t height = lv_obj_get_content_height(m_obj);
 
     m_columns     = width  > 0 ? width  / m_cellWidth  : 1;
@@ -361,9 +366,9 @@ void TermView::draw(lv_event_t* event) {
             if (runStart >= 0) {
                 const int32_t column = span.indent + (runStart - span.start);
                 lv_area_t area;
-                area.x1 = content.x1 + column * m_cellWidth;
+                area.x1 = content.x1 + kGutter + column * m_cellWidth;
                 area.y1 = y;
-                area.x2 = content.x1 + (span.indent + (k - span.start)) * m_cellWidth - 1;
+                area.x2 = content.x1 + kGutter + (span.indent + (k - span.start)) * m_cellWidth - 1;
                 area.y2 = y + m_cellHeight - 1;
                 fill.color = runColor;
                 fill.opa   = LV_OPA_COVER;
@@ -384,7 +389,7 @@ void TermView::draw(lv_event_t* event) {
 
             const int32_t column = span.indent + (k - span.start);
             lv_area_t box;
-            box.x1 = content.x1 + column * m_cellWidth;
+            box.x1 = content.x1 + kGutter + column * m_cellWidth;
             box.y1 = y;
             box.x2 = box.x1 + m_cellWidth - 1;
             box.y2 = y + m_cellHeight - 1;
@@ -416,7 +421,7 @@ void TermView::draw(lv_event_t* event) {
             lv_area_t marker;
             marker.x1 = content.x1;
             marker.y1 = y;
-            marker.x2 = content.x1 + 1;
+            marker.x2 = content.x1 + 1;   // inside the gutter, clear of the text
             marker.y2 = y + m_cellHeight - 1;
             fill.color = lv_color_hex(0xFF3B6E);
             fill.opa   = LV_OPA_COVER;

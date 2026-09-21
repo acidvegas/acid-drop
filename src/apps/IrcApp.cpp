@@ -190,6 +190,27 @@ void openInfoPanel() {
     lv_obj_set_style_text_color(title, theme::accent(), 0);
     lv_obj_align(title, LV_ALIGN_LEFT_MID, 46, 0);
 
+    // The status window is the one thing that cannot be closed.
+    if (!buffer.isStatus()) {
+        lv_obj_t* closeWindow = lv_button_create(header);
+        lv_obj_set_size(closeWindow, 74, 24);
+        lv_obj_set_style_bg_color(closeWindow, lv_color_hex(0x5A1828), 0);
+        lv_obj_align(closeWindow, LV_ALIGN_RIGHT_MID, -4, 0);
+        lv_obj_t* closeWindowLabel = lv_label_create(closeWindow);
+        lv_label_set_text(closeWindowLabel, LV_SYMBOL_CLOSE " Close");
+        lv_obj_set_style_text_font(closeWindowLabel, theme::uiFontSmall(), 0);
+        lv_obj_set_style_text_color(closeWindowLabel, lv_color_hex(theme::kDanger), 0);
+        lv_obj_center(closeWindowLabel);
+        lv_group_add_obj(input::group(), closeWindow);
+
+        lv_obj_add_event_cb(closeWindow, [](lv_event_t*) {
+            const size_t index = s_activeBuffer;
+            closeInfoPanel();
+            if (!ui::irc().closeBuffer(index)) ui::toast("Cannot close the status window");
+            else                               selectBuffer(0);
+        }, LV_EVENT_CLICKED, nullptr);
+    }
+
     lv_obj_t* scroll = lv_obj_create(overlay);
     lv_obj_remove_style_all(scroll);
     lv_obj_set_size(scroll, LV_PCT(100), LV_PCT(100) - 28);
@@ -323,24 +344,28 @@ void create(lv_obj_t* parent) {
     // Tab strip, with the app's own settings hanging off the right end.
     lv_obj_t* tabRow = lv_obj_create(s_page);
     lv_obj_remove_style_all(tabRow);
-    lv_obj_set_size(tabRow, LV_PCT(100), 22);
+    lv_obj_set_size(tabRow, LV_PCT(100), 28);
     lv_obj_set_flex_flow(tabRow, LV_FLEX_FLOW_ROW);
+    lv_obj_set_style_pad_column(tabRow, 4, 0);
+    lv_obj_set_style_pad_hor(tabRow, 3, 0);
+    lv_obj_set_flex_align(tabRow, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_bg_color(tabRow, lv_color_hex(theme::kSurface), 0);
     lv_obj_set_style_bg_opa(tabRow, LV_OPA_COVER, 0);
     lv_obj_set_scrollable(tabRow, false);
 
     lv_obj_remove_style_all(s_tabs);
-    lv_obj_set_height(s_tabs, 22);
+    lv_obj_set_height(s_tabs, 28);
     lv_obj_set_flex_grow(s_tabs, 1);
     lv_obj_set_flex_flow(s_tabs, LV_FLEX_FLOW_ROW);
-    lv_obj_set_style_pad_column(s_tabs, 3, 0);
+    lv_obj_set_style_pad_column(s_tabs, 4, 0);
     lv_obj_set_style_pad_hor(s_tabs, 4, 0);
     lv_obj_set_scroll_dir(s_tabs, LV_DIR_HOR);
     lv_obj_set_scrollbar_mode(s_tabs, LV_SCROLLBAR_MODE_OFF);
 
     lv_obj_t* reconnect = lv_obj_create(tabRow);
     lv_obj_remove_style_all(reconnect);
-    lv_obj_set_size(reconnect, 26, 22);
+    lv_obj_set_size(reconnect, 34, 26);
     lv_obj_set_clickable(reconnect, true);
     lv_obj_set_scrollable(reconnect, false);
     lv_obj_set_style_bg_color(reconnect, lv_color_hex(theme::kSurfaceAlt), 0);
@@ -363,7 +388,7 @@ void create(lv_obj_t* parent) {
 
     lv_obj_t* gear = lv_obj_create(tabRow);
     lv_obj_remove_style_all(gear);
-    lv_obj_set_size(gear, 26, 22);
+    lv_obj_set_size(gear, 34, 26);
     lv_obj_set_clickable(gear, true);
     lv_obj_set_scrollable(gear, false);
     lv_obj_set_style_bg_color(gear, lv_color_hex(theme::kSurfaceAlt), 0);
@@ -383,7 +408,7 @@ void create(lv_obj_t* parent) {
 
     lv_obj_t* info = lv_obj_create(tabRow);
     lv_obj_remove_style_all(info);
-    lv_obj_set_size(info, 26, 22);
+    lv_obj_set_size(info, 34, 26);
     lv_obj_set_clickable(info, true);
     lv_obj_set_scrollable(info, false);
     lv_obj_set_style_bg_color(info, lv_color_hex(theme::kSurfaceAlt), 0);
@@ -501,7 +526,7 @@ void onBufferListChanged() {
 
         lv_obj_t* tab = lv_obj_create(s_tabs);
         lv_obj_remove_style_all(tab);
-        lv_obj_set_size(tab, LV_SIZE_CONTENT, 18);
+        lv_obj_set_size(tab, LV_SIZE_CONTENT, 24);
         lv_obj_set_style_pad_hor(tab, 6, 0);
         lv_obj_set_style_radius(tab, 4, 0);
         lv_obj_set_style_bg_opa(tab, LV_OPA_COVER, 0);

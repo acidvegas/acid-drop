@@ -31,6 +31,9 @@ lv_group_t* group();
 void setKeyHook(KeyHook hook);
 void clearKeyHook();
 
+// Fired when the trackball button is held rather than tapped.
+void setHoldHandler(std::function<void()> handler);
+
 // millis() of the last touch, ball movement or keypress.
 uint32_t lastActivity();
 void     noteActivity();
