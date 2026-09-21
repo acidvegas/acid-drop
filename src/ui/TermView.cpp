@@ -336,6 +336,14 @@ void TermView::draw(lv_event_t* event) {
     lv_area_t content;
     lv_obj_get_content_coords(m_obj, &content);
 
+    // Rows are a whole number of cells tall, so the viewport almost never
+    // divides evenly. Push the block to the bottom and let the remainder sit
+    // at the top: the newest line then sits right above the input instead of
+    // leaving a gap there, which is the space worth reclaiming.
+    const int32_t usable    = content.y2 - content.y1 + 1;
+    const int32_t remainder = usable - (m_visibleRows * m_cellHeight);
+    const int32_t originY   = content.y1 + (remainder > 0 ? remainder : 0);
+
     std::vector<RowRef> visible;
     collectVisibleRows(visible);
     if (visible.empty()) return;
@@ -370,7 +378,7 @@ void TermView::draw(lv_event_t* event) {
         if (ref.row >= m_rowScratch.size()) continue;
 
         const textfmt::RowSpan& span = m_rowScratch[ref.row];
-        const int32_t y = content.y1 + screenRow * m_cellHeight;
+        const int32_t y = originY + screenRow * m_cellHeight;
 
         // Backgrounds first, merging runs of the same colour into one fill so a
         // line of coloured spaces costs one rectangle instead of forty.
