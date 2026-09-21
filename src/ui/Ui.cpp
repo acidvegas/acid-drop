@@ -30,7 +30,8 @@ lv_obj_t* s_toast   = nullptr;
 uint32_t  s_toastUntil = 0;
 
 AppId              s_current = AppId::Launcher;
-std::vector<AppId> s_stack;          // where back() goes, most recent last
+bool               s_appBuilt = false;   // s_current has actually been created
+std::vector<AppId> s_stack;              // where back() goes, most recent last
 IrcClient          s_irc;
 
 struct AppHooks {
@@ -133,19 +134,24 @@ void loop() {
 }
 
 void openApp(AppId id) {
-    if (id == s_current) return;
+    // Re-opening the current app is a no-op, but only once it exists: at boot
+    // s_current is already Launcher and nothing has been built yet.
+    if (id == s_current && s_appBuilt) return;
 
     // Remember where we came from, but never let the trail grow without bound
     // and never record the launcher, which is the floor of the stack anyway.
-    if (s_current != AppId::Launcher) {
+    if (s_appBuilt && s_current != AppId::Launcher) {
         s_stack.push_back(s_current);
         if (s_stack.size() > 4) s_stack.erase(s_stack.begin());
     }
 
-    hooksFor(s_current).destroy();
-    lv_obj_clean(s_content);
+    if (s_appBuilt) {
+        hooksFor(s_current).destroy();
+        lv_obj_clean(s_content);
+    }
 
-    s_current = id;
+    s_current  = id;
+    s_appBuilt = true;
     hooksFor(id).create(s_content);
 
     LOG_I(TAG, "opened app %d", static_cast<int>(id));
@@ -170,7 +176,8 @@ void back() {
     // around it: this is a pop, not a new navigation.
     hooksFor(s_current).destroy();
     lv_obj_clean(s_content);
-    s_current = destination;
+    s_current  = destination;
+    s_appBuilt = true;
     hooksFor(destination).create(s_content);
 }
 
