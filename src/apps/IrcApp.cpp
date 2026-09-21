@@ -19,7 +19,8 @@ constexpr const char* TAG = "ircapp";
 lv_obj_t* s_page   = nullptr;
 lv_obj_t* s_tabs   = nullptr;
 lv_obj_t* s_input  = nullptr;
-lv_obj_t* s_reconnectLabel = nullptr;
+lv_obj_t* s_reconnectLabel  = nullptr;
+lv_obj_t* s_reconnectButton = nullptr;
 lv_obj_t* s_infoPanel      = nullptr;
 lv_obj_t* s_infoBody       = nullptr;
 TermView  s_view;
@@ -56,12 +57,15 @@ void updateTitle() {
     // the status bar has room for one short word, not two.
     statusbar::setTitle(buffer.isStatus() ? String("status") : buffer.name);
 
-    // Make the reconnect button obvious when it is the thing you want.
-    if (s_reconnectLabel) {
+    // The reconnect button is only there when it is useful: hidden once the
+    // connection is up, back the moment it is not.
+    if (s_reconnectButton) {
         const bool offline = client.state() != IrcState::Ready;
-        lv_obj_set_style_text_color(s_reconnectLabel,
-                                    offline ? lv_color_hex(theme::kWarning)
-                                            : theme::textDim(), 0);
+        lv_obj_set_hidden(s_reconnectButton, !offline);
+        if (offline && s_reconnectLabel) {
+            lv_obj_set_style_text_color(s_reconnectLabel,
+                                        lv_color_hex(theme::kWarning), 0);
+        }
     }
 
 }
@@ -415,7 +419,8 @@ void create(lv_obj_t* parent) {
         ui::irc().connect();
         ui::toast("Reconnecting...");
     });
-    s_reconnectLabel = lv_obj_get_child(reconnect, 0);
+    s_reconnectButton = reconnect;
+    s_reconnectLabel  = lv_obj_get_child(reconnect, 0);
 
     makeButton(LV_SYMBOL_SETTINGS, theme::textDim(),
                [](lv_event_t*) { ui::openApp(ui::AppId::IrcSettings); });
@@ -482,7 +487,8 @@ void destroy() {
     s_page  = nullptr;
     s_tabs  = nullptr;
     s_input = nullptr;
-    s_reconnectLabel = nullptr;
+    s_reconnectLabel  = nullptr;
+    s_reconnectButton = nullptr;
     s_tabButtons.clear();
 }
 

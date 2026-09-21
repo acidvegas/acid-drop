@@ -118,6 +118,7 @@ private:
     // picks up the result.
     void startConnect();
     void pollConnect();
+    void reapOrphanedJobs();
     void handleSocket();
     void onDisconnected(const char* why);
     void scheduleReconnect();
@@ -159,7 +160,10 @@ private:
 
     // --- socket ---
     std::unique_ptr<WiFiClient> m_socket;
-    void*    m_job = nullptr;      // in-flight ConnectJob, owned by the task
+    void*    m_job = nullptr;      // in-flight ConnectJob
+    // Attempts we stopped waiting for. The task never frees anything, so
+    // ownership never crosses threads; these are reaped here once they finish.
+    std::vector<void*> m_orphanedJobs;
     bool     m_usingTls        = false;
     bool     m_triedTlsAlready = false;   // drives the plaintext fallback
     String   m_rxBuffer;
