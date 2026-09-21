@@ -136,9 +136,18 @@ void refreshInfoPanel() {
         text += "\nTopic\n";
         text += buffer.topic.isEmpty() ? String("(none set)") : textfmt::strip(buffer.topic);
         text += "\n\nUsers\n";
-        for (size_t i = 0; i < buffer.nicks.size(); i++) {
+
+        // Capped: this is rebuilt once a second while the page is open, and a
+        // few hundred nicks is a few kilobytes of string churn per refresh.
+        constexpr size_t kMaxListed = 150;
+        const size_t listed = buffer.nicks.size() < kMaxListed ? buffer.nicks.size()
+                                                               : kMaxListed;
+        for (size_t i = 0; i < listed; i++) {
             text += buffer.nicks[i];
             text += (i + 1) % 3 == 0 ? "\n" : "  ";
+        }
+        if (buffer.nicks.size() > listed) {
+            text += "\n... and " + String(buffer.nicks.size() - listed) + " more";
         }
     } else {
         text += "Private message with " + buffer.name + "\n";

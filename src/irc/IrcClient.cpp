@@ -2,6 +2,8 @@
 
 #include <SD.h>
 #include <WiFi.h>
+
+#include <map>
 #include <time.h>
 
 #include "core/Log.h"
@@ -462,8 +464,10 @@ void IrcClient::loop() {
 }
 
 void IrcClient::handleSocket() {
-    // Bounded per call so a burst of traffic cannot starve the UI.
-    int budget = 64;
+    // Bounded per call so a burst of traffic cannot starve the UI, but large
+    // enough to actually keep up: a MOTD and a NAMES burst run to tens of
+    // kilobytes, and draining 64 bytes per frame would take minutes.
+    int budget = 2048;
 
     while (m_socket->available() && budget-- > 0) {
         const char c = static_cast<char>(m_socket->read());
@@ -1124,11 +1128,34 @@ bool IrcClient::sendRaw(const String& line) {
 
 void IrcClient::say(const String& target, const String& text) {
     if (target.isEmpty() || text.isEmpty()) return;
-    if (!sendRaw("PRIVMSG " + target + " :" + text)) return;
 
     IrcBuffer& where = ensureBuffer(target, irc::isChannel(target) ? BufferKind::Channel
                                                                    : BufferKind::Query);
-    addLine(where, formatNick(m_nick) + " " + text, LINE_MESSAGE);
+
+    // A line over the protocol limit used to be truncated, losing the tail
+    // silently. Split it instead, on a space where there is one nearby.
+    const String prefix = "PRIVMSG " + target + " :";
+    const int    room   = 510 - static_cast<int>(prefix.length());
+    if (room <= 0) return;
+
+    int offset = 0;
+    while (offset < static_cast<int>(text.length())) {
+        int take = static_cast<int>(text.length()) - offset;
+        if (take > room) {
+            take = room;
+            // Walk back to a space, but not so far that we send a sliver.
+            int space = take;
+            while (space > room / 2 && text[offset + space] != ' ') space--;
+            if (space > room / 2) take = space;
+        }
+
+        const String chunk = text.substring(offset, offset + take);
+        if (!sendRaw(prefix + chunk)) return;
+        addLine(where, formatNick(m_nick) + " " + chunk, LINE_MESSAGE);
+
+        offset += take;
+        while (offset < static_cast<int>(text.length()) && text[offset] == ' ') offset++;
+    }
 }
 
 void IrcClient::action(const String& target, const String& text) {
@@ -1235,8 +1262,29 @@ uint32_t IrcClient::lineStamp(const IrcMessage& message) const {
     if (serverTime.length() >= 19) {
         struct tm parts = {};
         if (strptime(serverTime.c_str(), "%Y-%m-%dT%H:%M:%S", &parts)) {
-            const time_t utc = mktime(&parts);
-            if (utc > 0) return static_cast<uint32_t>(utc);
+            // The tag is UTC. mktime() would read the fields as local time and
+            // shift every replayed line by the timezone offset, so count the
+            // days directly instead.
+            static const uint16_t kDaysBeforeMonth[12] = {
+                0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334
+            };
+
+            const int year = parts.tm_year + 1900;
+            if (year >= 1970 && year < 2100) {
+                uint32_t days = 0;
+                for (int y = 1970; y < year; y++) {
+                    const bool leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+                    days += leap ? 366 : 365;
+                }
+                days += kDaysBeforeMonth[parts.tm_mon];
+
+                const bool leapThisYear = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+                if (leapThisYear && parts.tm_mon > 1) days++;
+                days += parts.tm_mday - 1;
+
+                return days * 86400UL + parts.tm_hour * 3600UL +
+                       parts.tm_min * 60UL + parts.tm_sec;
+            }
         }
     }
     return static_cast<uint32_t>(time(nullptr));
@@ -1281,8 +1329,16 @@ String IrcClient::colorForNick(const String& nick) const {
     switch (settings::getEnum("irc_nickcol")) {
         case 0:
             return String();
-        case 2:
-            return ctrlColor(kPalette[random(count)]);
+        case 2: {
+            // Rolled once per nick and remembered: re-rolling per line made a
+            // nick change colour on every message it sent.
+            static std::map<String, uint8_t> assigned;
+            auto it = assigned.find(nick);
+            if (it == assigned.end()) {
+                it = assigned.emplace(nick, kPalette[random(count)]).first;
+            }
+            return ctrlColor(it->second);
+        }
         default: {
             // FNV-1a keeps a nick the same colour across sessions and devices.
             uint32_t hash = 2166136261u;
