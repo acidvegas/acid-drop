@@ -8,6 +8,10 @@ class AcidLGFX : public lgfx::LGFX_Device {
 public:
     AcidLGFX();
 
+    // GT911 panels ship strapped to either 0x5D or 0x14 depending on the batch.
+    // Must be called before init().
+    void setTouchAddress(uint8_t address);
+
 private:
     lgfx::Panel_ST7789   _panel;
     lgfx::Bus_SPI        _bus;
