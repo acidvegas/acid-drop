@@ -25,4 +25,13 @@ bool read(int16_t& x, int16_t& y);
 // Mirrors the mapping when the display is mounted upside down.
 void setFlipped(bool flipped);
 
+// The controller's own reading, before any rotation is applied. Used by the
+// calibration screen to work out which mapping is correct by measurement
+// rather than by assuming one.
+bool readRaw(uint16_t& rawX, uint16_t& rawY);
+
+// Applies mapping `index` (0-3) to a raw reading.
+void applyMapping(uint8_t index, uint16_t rawX, uint16_t rawY, int16_t& x, int16_t& y);
+constexpr uint8_t kMappingCount = 4;
+
 } // namespace touch
