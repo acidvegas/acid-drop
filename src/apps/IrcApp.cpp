@@ -19,8 +19,9 @@ constexpr const char* TAG = "ircapp";
 lv_obj_t* s_page   = nullptr;
 lv_obj_t* s_tabs   = nullptr;
 lv_obj_t* s_input  = nullptr;
-lv_obj_t* s_topic  = nullptr;
 lv_obj_t* s_reconnectLabel = nullptr;
+lv_obj_t* s_infoPanel      = nullptr;
+lv_obj_t* s_infoBody       = nullptr;
 TermView  s_view;
 
 size_t s_activeBuffer = 0;
@@ -63,24 +64,6 @@ void updateTitle() {
                                             : theme::textDim(), 0);
     }
 
-    if (!s_topic) return;
-
-    String subtitle;
-    if (buffer.isChannel()) {
-        if (!buffer.joined && !buffer.retryReason.isEmpty()) {
-            subtitle = "Cannot join: " + buffer.retryReason + " - retrying";
-        } else if (!buffer.topic.isEmpty()) {
-            subtitle = buffer.topic;
-        } else {
-            subtitle = String(buffer.nicks.size()) + " users";
-        }
-    } else if (buffer.isStatus()) {
-        subtitle = client.stateText();
-    } else {
-        subtitle = "private message";
-    }
-
-    lv_label_set_text(s_topic, subtitle.c_str());
 }
 
 // The status-bar dot means "something wants you somewhere", so it clears only
@@ -118,6 +101,111 @@ void tabEventCb(lv_event_t* event) {
 }
 
 // --- commands -------------------------------------------------------------
+
+void closeInfoPanel() {
+    if (s_infoPanel) {
+        lv_obj_delete(s_infoPanel);
+        s_infoPanel = nullptr;
+    }
+    s_infoBody = nullptr;
+}
+
+void refreshInfoPanel() {
+    if (!s_infoBody) return;
+
+    IrcBuffer& buffer = activeBuffer();
+    IrcClient& client = ui::irc();
+
+    String text;
+    if (buffer.isStatus()) {
+        text += "Server    " + settings::getText("irc_server") + ":" +
+                String(settings::getInt("irc_port")) +
+                (settings::getBool("irc_tls") ? " (TLS)" : "") + "\n";
+        text += "State     " + client.stateText() + "\n";
+        text += "Nick      " + client.nick() + "\n";
+        text += "Windows   " + String(client.bufferCount()) + "\n";
+    } else if (buffer.isChannel()) {
+        text += "Channel   " + buffer.name + "\n";
+        text += "Status    " + String(buffer.joined ? "joined" : "not joined");
+        if (!buffer.joined && !buffer.retryReason.isEmpty()) {
+            text += " (" + buffer.retryReason + ", retrying)";
+        }
+        text += "\n";
+        text += "Modes     " + (buffer.modes.isEmpty() ? String("unknown") : buffer.modes) + "\n";
+        text += "Users     " + String(buffer.nicks.size()) + "\n";
+        text += "\nTopic\n";
+        text += buffer.topic.isEmpty() ? String("(none set)") : textfmt::strip(buffer.topic);
+        text += "\n\nUsers\n";
+        for (size_t i = 0; i < buffer.nicks.size(); i++) {
+            text += buffer.nicks[i];
+            text += (i + 1) % 3 == 0 ? "\n" : "  ";
+        }
+    } else {
+        text += "Private message with " + buffer.name + "\n";
+        text += "Your nick " + client.nick() + "\n";
+    }
+
+    lv_label_set_text(s_infoBody, text.c_str());
+}
+
+void openInfoPanel() {
+    closeInfoPanel();
+
+    IrcBuffer& buffer = activeBuffer();
+
+    // Ask the server for anything we may be missing or stale on.
+    if (buffer.isChannel() && buffer.joined) {
+        ui::irc().sendRaw("MODE " + buffer.name);
+        ui::irc().sendRaw("TOPIC " + buffer.name);
+        ui::irc().sendRaw("NAMES " + buffer.name);
+    }
+
+    lv_obj_t* overlay = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(overlay);
+    lv_obj_set_size(overlay, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_style_bg_color(overlay, lv_color_hex(theme::kBackground), 0);
+    lv_obj_set_style_bg_opa(overlay, LV_OPA_COVER, 0);
+    lv_obj_set_clickable(overlay, true);
+    s_infoPanel = overlay;
+
+    lv_obj_t* header = lv_obj_create(overlay);
+    lv_obj_remove_style_all(header);
+    lv_obj_set_size(header, LV_PCT(100), 26);
+    lv_obj_set_scrollable(header, false);
+
+    lv_obj_t* close = lv_button_create(header);
+    lv_obj_set_size(close, 34, 24);
+    lv_obj_set_style_bg_color(close, lv_color_hex(theme::kSurfaceAlt), 0);
+    lv_obj_align(close, LV_ALIGN_LEFT_MID, 4, 0);
+    lv_obj_t* closeLabel = lv_label_create(close);
+    lv_label_set_text(closeLabel, LV_SYMBOL_LEFT);
+    lv_obj_center(closeLabel);
+    lv_group_add_obj(input::group(), close);
+    lv_group_focus_obj(close);
+    lv_obj_add_event_cb(close, [](lv_event_t*) { closeInfoPanel(); }, LV_EVENT_CLICKED, nullptr);
+
+    lv_obj_t* title = lv_label_create(header);
+    lv_label_set_text(title, buffer.isStatus() ? "Server info" : buffer.name.c_str());
+    lv_obj_set_style_text_font(title, theme::uiFont(), 0);
+    lv_obj_set_style_text_color(title, theme::accent(), 0);
+    lv_obj_align(title, LV_ALIGN_LEFT_MID, 46, 0);
+
+    lv_obj_t* scroll = lv_obj_create(overlay);
+    lv_obj_remove_style_all(scroll);
+    lv_obj_set_size(scroll, LV_PCT(100), LV_PCT(100) - 28);
+    lv_obj_set_y(scroll, 28);
+    lv_obj_set_style_pad_all(scroll, 6, 0);
+    lv_obj_set_scroll_dir(scroll, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(scroll, LV_SCROLLBAR_MODE_AUTO);
+
+    s_infoBody = lv_label_create(scroll);
+    lv_label_set_long_mode(s_infoBody, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(s_infoBody, LV_PCT(100));
+    lv_obj_set_style_text_font(s_infoBody, &acid_mono_10, 0);
+    lv_obj_set_style_text_color(s_infoBody, theme::text(), 0);
+
+    refreshInfoPanel();
+}
 
 void selectRelative(int delta) {
     const size_t count = ui::irc().bufferCount();
@@ -210,6 +298,7 @@ bool keyHook(uint32_t key) {
         }
 
         case LV_KEY_ESC:
+            if (s_infoPanel) { closeInfoPanel(); return true; }
             ui::back();
             return true;
 
@@ -292,17 +381,27 @@ void create(lv_obj_t* parent) {
         ui::openApp(ui::AppId::IrcSettings);
     }, LV_EVENT_CLICKED, nullptr);
 
-    // Topic / context line.
-    s_topic = lv_label_create(s_page);
-    lv_obj_set_width(s_topic, LV_PCT(100));
-    lv_label_set_long_mode(s_topic, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_font(s_topic, theme::uiFontSmall(), 0);
-    lv_obj_set_style_text_color(s_topic, theme::textDim(), 0);
-    lv_obj_set_style_bg_color(s_topic, lv_color_hex(theme::kSurfaceAlt), 0);
-    lv_obj_set_style_bg_opa(s_topic, LV_OPA_COVER, 0);
-    lv_obj_set_style_pad_hor(s_topic, 5, 0);
-    lv_obj_set_style_pad_ver(s_topic, 2, 0);
-    lv_label_set_text(s_topic, "");
+    lv_obj_t* info = lv_obj_create(tabRow);
+    lv_obj_remove_style_all(info);
+    lv_obj_set_size(info, 26, 22);
+    lv_obj_set_clickable(info, true);
+    lv_obj_set_scrollable(info, false);
+    lv_obj_set_style_bg_color(info, lv_color_hex(theme::kSurfaceAlt), 0);
+    lv_obj_set_style_bg_opa(info, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(info, 4, 0);
+    lv_group_add_obj(input::group(), info);
+
+    lv_obj_t* infoLabel = lv_label_create(info);
+    lv_label_set_text(infoLabel, LV_SYMBOL_LIST);
+    lv_obj_set_style_text_font(infoLabel, theme::uiFontSmall(), 0);
+    lv_obj_set_style_text_color(infoLabel, theme::textDim(), 0);
+    lv_obj_center(infoLabel);
+
+    lv_obj_add_event_cb(info, [](lv_event_t*) { openInfoPanel(); }, LV_EVENT_CLICKED, nullptr);
+
+    // The buffer names go last so they run off to the right of the buttons,
+    // making the order and the current window obvious at a glance.
+    lv_obj_move_to_index(s_tabs, -1);
 
     // The message grid.
     lv_obj_t* viewHost = lv_obj_create(s_page);
@@ -341,6 +440,7 @@ void create(lv_obj_t* parent) {
 
 void destroy() {
     s_alive = false;
+    closeInfoPanel();
     input::clearKeyHook();
     statusbar::setTitle("");      // the next app owns the bar, not us
     s_view.setDocument(nullptr);
@@ -348,7 +448,6 @@ void destroy() {
     s_page  = nullptr;
     s_tabs  = nullptr;
     s_input = nullptr;
-    s_topic = nullptr;
     s_reconnectLabel = nullptr;
     s_tabButtons.clear();
 }
@@ -361,6 +460,7 @@ void tick() {
     if (now - lastTitle > 1000) {
         lastTitle = now;
         updateTitle();
+        refreshInfoPanel();
     }
 }
 

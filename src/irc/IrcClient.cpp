@@ -674,6 +674,17 @@ void IrcClient::handleNumeric(const IrcMessage& message) {
             finishCapNegotiation();
             return;
 
+        case 324: { // RPL_CHANNELMODEIS
+            IrcBuffer& channel = ensureBuffer(message.param(1), BufferKind::Channel);
+            String modes;
+            for (size_t i = 2; i < message.params.size(); i++) {
+                if (i > 2) modes += ' ';
+                modes += message.params[i];
+            }
+            channel.modes = modes;
+            return;
+        }
+
         case 332: { // RPL_TOPIC
             IrcBuffer& channel = ensureBuffer(message.param(1), BufferKind::Channel);
             channel.topic = message.param(2);
