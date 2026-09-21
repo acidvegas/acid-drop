@@ -95,7 +95,7 @@ const std::vector<SettingDef> kDefs = {
     DEF_BOOL("irc_tls",     "Server", "TLS",              nullptr, 1),
     DEF_BOOL("irc_tlsverif","Server", "Verify certificate", "Off accepts self-signed certificates", 0),
     DEF_BOOL("irc_fallback","Server", "Plaintext fallback", "Retry on port 6667 if TLS fails", 1),
-    DEF_BOOL("irc_autoconn","Server", "Connect on boot",  nullptr, 1),
+    DEF_BOOL("irc_autoconn","Server", "Connect on boot",  "Off by default: connect from the IRC app instead", 0),
     DEF_TEXT("irc_nick",    "Identity", "Nick",             nullptr, ""),
     DEF_TEXT("irc_altnick", "Identity", "Alternate nick",   "Used if the first one is taken", ""),
     DEF_TEXT("irc_user",    "Identity", "Username",         nullptr, "tdeck"),

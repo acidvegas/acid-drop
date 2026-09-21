@@ -206,8 +206,12 @@ void openInfoPanel() {
         lv_obj_add_event_cb(closeWindow, [](lv_event_t*) {
             const size_t index = s_activeBuffer;
             closeInfoPanel();
+
+            // Let go of the document before the buffer owning it is destroyed.
+            s_view.setDocument(nullptr);
+
             if (!ui::irc().closeBuffer(index)) ui::toast("Cannot close the status window");
-            else                               selectBuffer(0);
+            selectBuffer(0);
         }, LV_EVENT_CLICKED, nullptr);
     }
 
@@ -255,11 +259,10 @@ irccmd::Context commandContext() {
     context.prevWindow   = [] { selectRelative(-1); };
 
     context.closeWindow = [] {
-        if (!ui::irc().closeBuffer(s_activeBuffer)) {
-            ui::toast("Cannot close the status window");
-        } else {
-            selectBuffer(0);
-        }
+        const size_t index = s_activeBuffer;
+        s_view.setDocument(nullptr);   // the buffer owns the document
+        if (!ui::irc().closeBuffer(index)) ui::toast("Cannot close the status window");
+        selectBuffer(0);
     };
     context.clearWindow = [] {
         activeBuffer().doc.clear();

@@ -694,6 +694,15 @@ void IrcClient::handleNumeric(const IrcMessage& message) {
 
         case 353: { // RPL_NAMREPLY
             IrcBuffer& channel = ensureBuffer(message.param(2), BufferKind::Channel);
+
+            // First reply of a batch replaces the list; the rest append. NAMES
+            // can be re-requested at any time, and without this the roster
+            // doubles every time it is refreshed.
+            if (!channel.namesLoading) {
+                channel.nicks.clear();
+                channel.namesLoading = true;
+            }
+
             for (String name : irc::splitList(message.param(3), ' ')) {
                 while (!name.isEmpty() && strchr("@+%~&!", name[0])) name = name.substring(1);
                 if (!name.isEmpty()) channel.nicks.push_back(name);
@@ -703,6 +712,7 @@ void IrcClient::handleNumeric(const IrcMessage& message) {
 
         case 366: { // RPL_ENDOFNAMES
             IrcBuffer& channel = ensureBuffer(message.param(1), BufferKind::Channel);
+            channel.namesLoading = false;
             addLine(channel, ctrlColor(14) + "* " + String(channel.nicks.size()) +
                              " users" + RESET, LINE_SERVER);
             return;
@@ -825,6 +835,17 @@ void IrcClient::handleJoin(const IrcMessage& message) {
     IrcBuffer& channel = ensureBuffer(channelName, BufferKind::Channel);
 
     if (irc::equalsIgnoreCaseIrc(message.nick, m_nick)) {
+        // Some networks drop you into a lobby or announcement channel on
+        // connect. If we never asked for this one, leave again rather than
+        // silently sitting in it.
+        if (!channel.requested) {
+            LOG_I(TAG, "server put us in %s unasked, parting", channelName.c_str());
+            addStatus("Left " + channelName + " (joined by the server, not requested)",
+                      LINE_LOCAL);
+            sendRaw("PART " + channelName + " :not requested");
+            return;
+        }
+
         channel.joined      = true;
         channel.retryAt     = 0;
         channel.retryCount  = 0;
@@ -855,7 +876,8 @@ void IrcClient::handlePart(const IrcMessage& message) {
     if (!channel) return;
 
     if (irc::equalsIgnoreCaseIrc(message.nick, m_nick)) {
-        channel->joined = false;
+        channel->joined    = false;
+        channel->requested = false;
         channel->nicks.clear();
         addLine(*channel, ctrlColor(4) + "<- You left " + channelName + RESET, LINE_PART);
         return;
@@ -1044,6 +1066,7 @@ void IrcClient::processJoinQueue() {
 
         String command = "JOIN " + buffer->name;
         if (!buffer->key.isEmpty()) command += " " + buffer->key;
+        buffer->requested = true;
         sendRaw(command);
 
         if (buffer->retryCount > 1) {
@@ -1130,6 +1153,7 @@ void IrcClient::join(const String& channel, const String& key) {
     buffer.retryCount = 0;
 
     // A channel you joined by hand should survive a reconnect, so remember it.
+    buffer.requested = true;
     channels::rememberJoin(channel, key);
     if (const IrcChannelConfig* saved = channels::find(channel)) {
         buffer.retryEnabled = saved->retry;
