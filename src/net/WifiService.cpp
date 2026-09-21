@@ -19,6 +19,7 @@ constexpr const char* TAG = "wifi";
 bool     s_enabled      = false;
 uint32_t s_attemptAt    = 0;    // millis of the last WiFi.begin()
 uint8_t  s_attempts     = 0;    // association attempts for the current target
+String   s_lastError;           // why the last attempt failed, for the UI
 bool     s_connected    = false;
 bool     s_scanning     = false;
 bool     s_clockSynced  = false;
@@ -79,6 +80,25 @@ void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
         case ARDUINO_EVENT_WIFI_STA_DISCONNECTED: {
             const uint8_t reason = info.wifi_sta_disconnected.reason;
             LOG_W(TAG, "disconnected: reason %u (%s)", reason, disconnectReason(reason));
+
+            // An authentication rejection will not fix itself. Retrying it
+            // forever keeps the radio busy and stops scanning working, so give
+            // up after a few and leave the reason on screen.
+            const bool authProblem = reason == WIFI_REASON_AUTH_EXPIRE ||
+                                     reason == WIFI_REASON_AUTH_FAIL ||
+                                     reason == WIFI_REASON_MIC_FAILURE ||
+                                     reason == WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT ||
+                                     reason == WIFI_REASON_IE_IN_4WAY_DIFFERS;
+            if (authProblem && s_attempts >= 4) {
+                LOG_E(TAG, "giving up on %s: the AP keeps rejecting us (%s)",
+                      s_pendingSsid.isEmpty() ? settings::getText("wifi_ssid").c_str()
+                                              : s_pendingSsid.c_str(),
+                      disconnectReason(reason));
+                s_lastError   = disconnectReason(reason);
+                s_nextRetryAt = 0;          // stop the retry loop
+                WiFi.disconnect(false, false);
+                break;
+            }
 
             if (s_connected) {
                 s_connected = false;
@@ -205,6 +225,7 @@ void connect(const String& ssid, const String& password, bool save) {
 
     LOG_I(TAG, "associating with %s", ssid.c_str());
     s_attempts  = 1;
+    s_lastError = "";
     s_attemptAt = millis();
     WiFi.begin(ssid.c_str(), password.isEmpty() ? nullptr : password.c_str());
     s_nextRetryAt = millis() + 20000;
@@ -222,6 +243,11 @@ void startScan() {
 
     s_scanning = true;
     s_results.clear();
+
+    // Stop any association attempt first. The supplicant retries roughly once
+    // a second on a rejected password, and a scan cannot get the radio while
+    // that is going on - which looks exactly like "scanning finds nothing".
+    if (!s_connected) WiFi.disconnect(false, false);
 
     // Hold off the reconnect timer for the duration; whichever network the user
     // picks from the results supersedes it anyway.
@@ -276,12 +302,15 @@ void loop() {
 
 uint8_t connectAttempts() { return s_attempts; }
 
+String lastError() { return s_lastError; }
+
 void cancelConnect() {
     LOG_I(TAG, "association cancelled");
     s_pendingSsid     = "";
     s_pendingPassword = "";
     s_nextRetryAt     = 0;
     s_attempts        = 0;
+    s_lastError       = "";
     WiFi.disconnect();
 }
 

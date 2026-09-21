@@ -13,10 +13,11 @@ namespace {
 
 constexpr const char* TAG = "audio";
 
-// a-ha, Take On Me: the original firmware's boot jingle, kept.
+// The opening of the original firmware's Take On Me jingle, cut short on
+// purpose: the splash is held until the tune ends, and the full riff made
+// every boot four seconds long.
 const char kBoot[] PROGMEM =
-    "TakeOnMe:d=4,o=4,b=250:8f#5,8f#5,8f#5,8d5,8p,8b,8p,8e5,8p,8e5,8p,8e5,8g#5,"
-    "8g#5,8a5,8b5,8a5,8a5,8a5,8e5,8p,8d5,8p,8f#5,8p,8f#5,8p,8f#5,8e5,8e5,8f#5,8e5";
+    "TakeOnMe:d=8,o=5,b=280:f#,f#,f#,d,p,b4,p,e,p,e,p,e,g#,g#,a,b";
 
 const char kMention[]      PROGMEM = "Mention:d=4,o=6,b=200:16e,16g,16c7";
 const char kPrivate[]      PROGMEM = "Query:d=4,o=6,b=200:16c7,16g,16c7";

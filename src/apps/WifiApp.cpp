@@ -196,6 +196,17 @@ void updateConnectDialog() {
 
     const uint8_t attempts = net::connectAttempts();
 
+    // The radio gave up early because the AP is rejecting the credentials.
+    const String failure = net::lastError();
+    if (!failure.isEmpty()) {
+        s_connectSettled = true;
+        lv_label_set_text_fmt(s_connectTitle, "Could not connect to %s", s_connectSsid.c_str());
+        lv_label_set_text_fmt(s_connectDetail, "%s", failure.c_str());
+        lv_obj_set_style_text_color(s_connectTitle, lv_color_hex(theme::kDanger), 0);
+        lv_label_set_text(s_connectAction, "Close");
+        return;
+    }
+
     if (attempts > kMaxAttempts) {
         s_connectSettled = true;
         net::cancelConnect();
