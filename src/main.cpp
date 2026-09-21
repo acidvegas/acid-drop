@@ -3,7 +3,6 @@
 
 #include <Arduino.h>
 #include <SPI.h>
-#include <Wire.h>
 #include <lvgl.h>
 
 #include "board/Audio.h"
@@ -74,10 +73,11 @@ void deselectSpiDevices() {
 void checkRecoveryKey() {
     delay(120);   // let the keyboard controller come up
 
-    Wire.requestFrom(static_cast<uint8_t>(KEYBOARD_I2C_ADDR), static_cast<uint8_t>(1));
-    if (!Wire.available()) return;
-
-    const int key = Wire.read();
+    uint8_t key = 0;
+    if (!lgfx::i2c::transactionRead(0, KEYBOARD_I2C_ADDR, &key,
+                                    1, BOARD_I2C_FREQ).has_value()) {
+        return;
+    }
     if (key != 'w' && key != 'W') return;
 
     LOG_W(TAG, "recovery key held, erasing settings");
@@ -101,8 +101,6 @@ void setup() {
     pinMode(BOARD_POWERON, OUTPUT);
     digitalWrite(BOARD_POWERON, HIGH);
     delay(60);
-
-    Wire.begin(BOARD_I2C_SDA, BOARD_I2C_SCL, BOARD_I2C_FREQ);
 
     settings::begin();
     logging::setLevel(static_cast<LogLevel>(settings::getEnum("log_level")));
