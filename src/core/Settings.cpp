@@ -52,6 +52,7 @@ const std::vector<SettingDef> kDefs = {
     DEF_BOOL("dst",         "Device",  "Daylight saving",  "Adds one hour while in effect", 1),
     DEF_BOOL("ntp_enable",  "Device",  "Sync clock (NTP)", "Requires WiFi", 1),
     DEF_TEXT("ntp_server",  "Device",  "NTP server",       nullptr, "pool.ntp.org"),
+    DEF_INT("splash_ms",   "Device",  "Splash time",      "How long the boot logo stays up", 0, 5000, 250, "ms", 1500),
     DEF_ENUM("boot_app",    "Device",  "Start in",         "Which screen to show after boot", kOptBootApp, 0),
 
     // --- Display ---------------------------------------------------------

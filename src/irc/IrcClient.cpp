@@ -167,6 +167,12 @@ void IrcClient::setState(IrcState next) {
 }
 
 String IrcClient::stateText() const {
+    // Without a network there is nothing to reconnect to, and saying so is
+    // more honest than showing an endless "Reconnecting".
+    if (WiFi.status() != WL_CONNECTED && m_state != IrcState::Ready) {
+        return "No network";
+    }
+
     switch (m_state) {
         case IrcState::Offline:      return "Offline";
         case IrcState::Connecting:   return "Connecting";
@@ -402,16 +408,23 @@ void IrcClient::loop() {
     // Nothing from the server for too long means the link is dead even though
     // the socket still looks open, which is the usual way a TCP session rots.
     if (m_state >= IrcState::Registering && m_cfg.pingTimeoutS > 0) {
-        const uint32_t silence = now - m_lastServerLine;
-        if (silence > m_cfg.pingTimeoutS * 1000UL) {
-            LOG_W(TAG, "ping timeout: silence=%lu limit=%lu lastLine=%lu now=%lu",
-                  (unsigned long)silence, (unsigned long)(m_cfg.pingTimeoutS * 1000UL),
-                  (unsigned long)m_lastServerLine, (unsigned long)now);
+        // Signed, and re-read rather than using the `now` from the top of the
+        // loop: the connection completing sets m_lastServerLine part way
+        // through this same iteration, so it can be *ahead* of that timestamp.
+        // As unsigned arithmetic that underflows to about 4.29 billion and
+        // trips the timeout instantly, killing the link seconds after connect.
+        const uint32_t nowMs   = millis();
+        const int32_t  silence = static_cast<int32_t>(nowMs - m_lastServerLine);
+        const int32_t  limit   = static_cast<int32_t>(m_cfg.pingTimeoutS * 1000UL);
+
+        if (silence > limit) {
+            LOG_W(TAG, "ping timeout after %ld ms (limit %ld)",
+                  (long)silence, (long)limit);
             onDisconnected("ping timeout");
-        } else if (silence > (m_cfg.pingTimeoutS * 1000UL) / 2 &&
-                   now - m_lastPingSent > 30000UL) {
-            m_lastPingSent = now;
-            sendRaw("PING :" + String(now));
+        } else if (silence > limit / 2 &&
+                   static_cast<int32_t>(nowMs - m_lastPingSent) > 30000) {
+            m_lastPingSent = nowMs;
+            sendRaw("PING :" + String(nowMs));
         }
     }
 }

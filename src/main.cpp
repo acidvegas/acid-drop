@@ -44,6 +44,8 @@ void bootStage(const char* name) {
 
 // The XBM logo is 1bpp, so it is drawn straight to the panel before LVGL takes
 // over the framebuffer.
+uint32_t s_logoShownAt = 0;
+
 void drawBootLogo() {
     gfx.fillScreen(0x0000);
 
@@ -52,6 +54,7 @@ void drawBootLogo() {
 
     gfx.drawXBitmap(x, y, logo_bits, logo_width, logo_height, 0x35E0 /* acid green */);
     display::setBrightness(settings::getInt("brightness"));
+    s_logoShownAt = millis();
 }
 
 // Everything on the shared SPI2 bus has to be deselected before the bus is
@@ -127,6 +130,11 @@ void setup() {
 
     bootStage("sound");
     audio::alert(Alert::Boot);
+
+    // Boot is quick enough now that the splash would otherwise flash past
+    // before anyone could see it.
+    const uint32_t splashMs = settings::getInt("splash_ms");
+    while (millis() - s_logoShownAt < splashMs) delay(10);
 
     bootStage("ui");
     ui::begin();
