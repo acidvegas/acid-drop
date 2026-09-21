@@ -37,7 +37,10 @@ AcidLGFX::AcidLGFX() {
         cfg.panel_height    = 320;
         cfg.offset_x        = 0;
         cfg.offset_y        = 0;
-        cfg.offset_rotation = 1;
+        // Stays 0: this is an offset ADDED to setRotation(), so setting it
+        // here as well would rotate twice and leave LVGL and the panel
+        // disagreeing about which dimension is which.
+        cfg.offset_rotation = 0;
         cfg.dummy_read_pixel = 8;
         cfg.dummy_read_bits  = 1;
         cfg.readable        = false;
