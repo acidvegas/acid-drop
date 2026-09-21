@@ -15,10 +15,24 @@ lv_obj_t* s_list      = nullptr;
 lv_obj_t* s_prompt    = nullptr;
 lv_obj_t* s_scanButton = nullptr;
 
+// The connecting dialog. It stays up until the association succeeds, gives up,
+// or is cancelled, so there is always something on screen saying what the
+// radio is doing.
+lv_obj_t* s_connectBox    = nullptr;
+lv_obj_t* s_connectTitle  = nullptr;
+lv_obj_t* s_connectDetail = nullptr;
+lv_obj_t* s_connectAction = nullptr;   // label inside the right-hand button
+String    s_connectSsid;
+bool      s_connectSettled = false;    // connected or given up
+
+constexpr uint8_t kMaxAttempts = 5;
+
 String s_pendingSsid;
 bool   s_listDirty = false;
 
 void rebuildList();
+void showConnectDialog(const String& ssid);
+void closeConnectDialog();
 
 void closePrompt() {
     if (s_prompt) {
@@ -32,7 +46,7 @@ void askForPassword(const String& ssid, bool secured) {
 
     if (!secured) {
         net::connect(ssid, "", true);
-        ui::toast("Connecting to " + ssid);
+        showConnectDialog(ssid);
         return;
     }
 
@@ -95,8 +109,107 @@ void askForPassword(const String& ssid, bool secured) {
         const String ssid = s_pendingSsid;
         closePrompt();
         net::connect(ssid, password, true);
-        ui::toast("Connecting to " + ssid);
+        showConnectDialog(ssid);
     }, LV_EVENT_CLICKED, nullptr);
+}
+
+void closeConnectDialog() {
+    if (s_connectBox) {
+        lv_obj_delete(s_connectBox);
+        s_connectBox = nullptr;
+    }
+    s_connectTitle = s_connectDetail = s_connectAction = nullptr;
+    s_connectSettled = false;
+}
+
+void showConnectDialog(const String& ssid) {
+    closeConnectDialog();
+    s_connectSsid    = ssid;
+    s_connectSettled = false;
+
+    lv_obj_t* overlay = lv_obj_create(lv_layer_top());
+    lv_obj_remove_style_all(overlay);
+    lv_obj_set_size(overlay, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_style_bg_color(overlay, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(overlay, LV_OPA_70, 0);
+    lv_obj_set_clickable(overlay, true);
+    s_connectBox = overlay;
+
+    lv_obj_t* card = lv_obj_create(overlay);
+    theme::stylePanel(card);
+    lv_obj_set_width(card, LV_PCT(88));
+    lv_obj_set_height(card, LV_SIZE_CONTENT);
+    lv_obj_center(card);
+    lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(card, 8, 0);
+
+    s_connectTitle = lv_label_create(card);
+    lv_label_set_text_fmt(s_connectTitle, "Connecting to %s", ssid.c_str());
+    lv_label_set_long_mode(s_connectTitle, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(s_connectTitle, LV_PCT(100));
+    lv_obj_set_style_text_color(s_connectTitle, theme::accent(), 0);
+    lv_obj_set_style_text_font(s_connectTitle, theme::uiFont(), 0);
+
+    s_connectDetail = lv_label_create(card);
+    lv_label_set_text(s_connectDetail, "starting");
+    lv_label_set_long_mode(s_connectDetail, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(s_connectDetail, LV_PCT(100));
+    lv_obj_set_style_text_color(s_connectDetail, theme::textDim(), 0);
+    lv_obj_set_style_text_font(s_connectDetail, theme::uiFontSmall(), 0);
+
+    lv_obj_t* row = lv_obj_create(card);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, LV_PCT(100), 34);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(row, 8, 0);
+    lv_obj_set_scrollable(row, false);
+
+    lv_obj_t* button = lv_button_create(row);
+    lv_obj_set_style_bg_color(button, lv_color_hex(theme::kSurfaceAlt), 0);
+    s_connectAction = lv_label_create(button);
+    lv_label_set_text(s_connectAction, "Stop");
+    lv_obj_center(s_connectAction);
+    lv_group_add_obj(input::group(), button);
+    lv_group_focus_obj(button);
+
+    // One button: it stops the attempt while it is running, and dismisses the
+    // dialog once there is a result.
+    lv_obj_add_event_cb(button, [](lv_event_t*) {
+        if (!s_connectSettled) net::cancelConnect();
+        closeConnectDialog();
+    }, LV_EVENT_CLICKED, nullptr);
+}
+
+void updateConnectDialog() {
+    if (!s_connectBox || s_connectSettled) return;
+
+    if (net::isConnected()) {
+        s_connectSettled = true;
+        lv_label_set_text_fmt(s_connectTitle, "Connected to %s", net::ssid().c_str());
+        lv_label_set_text_fmt(s_connectDetail, "%s  -  signal %u%%",
+                              net::ipAddress().c_str(), net::quality());
+        lv_obj_set_style_text_color(s_connectTitle, theme::accent(), 0);
+        lv_label_set_text(s_connectAction, "Done");
+        return;
+    }
+
+    const uint8_t attempts = net::connectAttempts();
+
+    if (attempts > kMaxAttempts) {
+        s_connectSettled = true;
+        net::cancelConnect();
+        lv_label_set_text_fmt(s_connectTitle, "Could not connect to %s", s_connectSsid.c_str());
+        lv_label_set_text_fmt(s_connectDetail, "Gave up after %u attempts: %s",
+                              kMaxAttempts, net::statusText().c_str());
+        lv_obj_set_style_text_color(s_connectTitle, lv_color_hex(theme::kDanger), 0);
+        lv_label_set_text(s_connectAction, "Close");
+        return;
+    }
+
+    lv_label_set_text_fmt(s_connectDetail, "Attempt %u of %u  -  %s",
+                          attempts ? attempts : 1, kMaxAttempts,
+                          net::statusText().c_str());
 }
 
 void networkEventCb(lv_event_t* event) {
@@ -153,7 +266,8 @@ void rebuildList() {
 
 bool keyHook(uint32_t key) {
     if (key != LV_KEY_ESC) return false;
-    if (s_prompt) { closePrompt(); return true; }
+    if (s_connectBox) { closeConnectDialog(); return true; }
+    if (s_prompt)     { closePrompt(); return true; }
     ui::back();
     return true;
 }
@@ -214,6 +328,7 @@ void create(lv_obj_t* parent) {
 }
 
 void destroy() {
+    closeConnectDialog();
     closePrompt();
     input::clearKeyHook();
     net::onScanFinished = nullptr;
@@ -224,6 +339,8 @@ void destroy() {
 }
 
 void tick() {
+    updateConnectDialog();
+
     if (!s_status) return;
 
     if (s_listDirty) {

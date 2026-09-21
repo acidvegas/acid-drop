@@ -32,6 +32,11 @@ void connect(const String& ssid, const String& password, bool save);
 void disconnect();
 bool isConnected();
 
+// Progress of the association attempt, for the connecting dialog.
+uint8_t connectAttempts();
+void    cancelConnect();
+String  statusText();
+
 void    startScan();
 bool    isScanning();
 const std::vector<ScanResult>& scanResults();
