@@ -156,9 +156,20 @@ bool begin() {
     lv_init();
     lv_tick_set_cb(tickCb);
 
-    const size_t bufBytes = kBufPixels * sizeof(uint16_t);
-    void* buf1 = heap_caps_malloc(bufBytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-    void* buf2 = heap_caps_malloc(bufBytes, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    // Round up so the size is a whole number of alignment units as well.
+    const size_t bufBytes =
+        (kBufPixels * sizeof(uint16_t) + LV_DRAW_BUF_ALIGN - 1) & ~(size_t)(LV_DRAW_BUF_ALIGN - 1);
+
+    // Must be heap_caps_aligned_alloc, not heap_caps_malloc: LVGL rejects a
+    // draw buffer that is not aligned to LV_DRAW_BUF_ALIGN and returns without
+    // setting one, leaving the display permanently unable to render. Plain
+    // malloc only promises 4-byte alignment, so whether this worked came down
+    // to where the allocator happened to land - which made unrelated changes
+    // elsewhere turn rendering on and off.
+    void* buf1 = heap_caps_aligned_alloc(LV_DRAW_BUF_ALIGN, bufBytes,
+                                         MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    void* buf2 = heap_caps_aligned_alloc(LV_DRAW_BUF_ALIGN, bufBytes,
+                                         MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
 
     if (buf1 == nullptr) {
         LOG_E("display", "could not allocate LVGL draw buffer (%u bytes)", (unsigned)bufBytes);
@@ -170,11 +181,25 @@ bool begin() {
 
     s_disp = lv_display_create(BOARD_TFT_WIDTH, BOARD_TFT_HEIGHT);
     lv_display_set_flush_cb(s_disp, flushCb);
-    lv_display_set_buffers(s_disp, buf1, buf2, bufBytes, LV_DISPLAY_RENDER_MODE_PARTIAL);
-    lv_display_set_color_format(s_disp, LV_COLOR_FORMAT_RGB565);
 
-    LOG_I("display", "ST7789 %dx%d up, %u byte draw buffers",
-          BOARD_TFT_WIDTH, BOARD_TFT_HEIGHT, (unsigned)bufBytes);
+    // Colour format before the buffers: the stride LVGL derives for them comes
+    // from the format that is set at the time.
+    lv_display_set_color_format(s_disp, LV_COLOR_FORMAT_RGB565);
+    lv_display_set_buffers(s_disp, buf1, buf2, bufBytes, LV_DISPLAY_RENDER_MODE_PARTIAL);
+
+    // Rendering silently doing nothing is the worst failure mode this driver
+    // has, so confirm the buffer actually took rather than assuming it did.
+    if (lv_display_get_buf_active(s_disp) == nullptr) {
+        LOG_E("display", "LVGL rejected the draw buffers (buf1=%p buf2=%p align=%d)",
+              buf1, buf2, (int)LV_DRAW_BUF_ALIGN);
+        gfx.setTextColor(0xF800, 0x0000);
+        gfx.setTextSize(1);
+        gfx.drawString("LVGL: no draw buffer", 4, BOARD_TFT_HEIGHT - 13);
+        return false;
+    }
+
+    LOG_I("display", "ST7789 %dx%d up, %u byte draw buffers at %p/%p",
+          BOARD_TFT_WIDTH, BOARD_TFT_HEIGHT, (unsigned)bufBytes, buf1, buf2);
     return true;
 }
 
