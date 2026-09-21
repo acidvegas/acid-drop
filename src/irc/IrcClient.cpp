@@ -1222,6 +1222,15 @@ IrcBuffer& IrcClient::ensureBuffer(const String& name, BufferKind kind) {
 
     if (IrcBuffer* existing = findBuffer(name)) return *existing;
 
+    // Anyone can open a window on us by sending a private message, so there
+    // has to be a ceiling. Past it, traffic lands in the status window rather
+    // than growing the list without bound.
+    constexpr size_t kMaxBuffers = 24;
+    if (m_buffers.size() >= kMaxBuffers) {
+        LOG_W(TAG, "window limit reached, routing %s to the status window", name.c_str());
+        return status();
+    }
+
     auto created = std::unique_ptr<IrcBuffer>(new IrcBuffer());
     created->name = name;
     created->kind = kind;
@@ -1333,6 +1342,11 @@ String IrcClient::colorForNick(const String& nick) const {
             // Rolled once per nick and remembered: re-rolling per line made a
             // nick change colour on every message it sent.
             static std::map<String, uint8_t> assigned;
+
+            // One entry per nick ever seen would grow without bound on a busy
+            // network; the assignment is arbitrary anyway, so start over.
+            if (assigned.size() > 256) assigned.clear();
+
             auto it = assigned.find(nick);
             if (it == assigned.end()) {
                 it = assigned.emplace(nick, kPalette[random(count)]).first;

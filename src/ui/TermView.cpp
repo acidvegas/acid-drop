@@ -85,6 +85,18 @@ void TermDoc::append(const String& text, uint32_t stamp, uint8_t kind, bool high
 
     m_lines.push_back(std::move(line));
 
+    // Scrollback is String data on the internal heap, so the line cap alone is
+    // not a memory bound: long lines across several windows can still exhaust
+    // it. Below a floor, drop history hard rather than fail an allocation
+    // somewhere less recoverable.
+    constexpr uint32_t kHeapFloor = 45000;
+    if (ESP.getFreeHeap() < kHeapFloor) {
+        const size_t keep = m_lines.size() / 2 > 40 ? m_lines.size() / 2 : 40;
+        while (m_lines.size() > keep) m_lines.pop_front();
+        scrollBack = 0;
+        stickToBottom = true;
+    }
+
     while (m_lines.size() > m_maxLines) {
         // Dropping the oldest line shifts everything up by its height. If the
         // reader is up in the scrollback, pull the anchor down by the same

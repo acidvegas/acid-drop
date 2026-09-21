@@ -18,8 +18,8 @@ break it with us.
 **Interface**
 - LVGL 9 UI on LovyanGFX, with touch, trackball and keyboard all wired into the same focus system
 - Status bar with clock, battery, WiFi, Bluetooth, GPS and sound indicators
-- Pull-down quick settings shade: radio toggles, brightness and volume sliders, live status readout
-- App launcher: IRC, WiFi, Settings, Syslog, About
+- Home screen of app tiles showing live state: IRC connection and unread count, WiFi SSID, GPS fix
+- Apps: IRC, WiFi, Settings, GPS, Syslog, About
 
 **IRC**
 - Multiple windows: a server/status window, channels and private messages, switchable by tab, arrow keys or `/0`..`/9`
@@ -29,11 +29,15 @@ break it with us.
 - Monospace CP437 font covering box drawing, block elements and shading; block characters are drawn as rectangles so tiled art has no seams
 - Lines that are not valid UTF-8 are decoded as code page 437, which is how BBS-era art usually arrives
 - TLS with SASL PLAIN, NickServ fallback, automatic plaintext fallback to 6667
+- The socket connect runs on its own task, so a TLS handshake does not freeze the UI
 - Reconnects automatically with exponential backoff, rejoins after a kick, and keeps retrying channels that are `+i`, `+k`, `+b` or full
 - Configurable delay between the welcome numeric (001) and the first JOIN, defaulting to six seconds
+- Channels the server joins you into unasked are parted automatically
+- Per-channel saved config: key, auto-join and retry, edited on the device
 
 **Everything else**
 - Around ninety settings across twelve sections, all editable on the device, all applied live
+- Scrollback lives in internal RAM (not PSRAM) and is trimmed automatically if free heap runs low
 - GNSS on the T-Deck Plus, LoRa (SX1262), BLE, SD card
 - On-device syslog so you can debug without a USB cable
 
@@ -63,12 +67,14 @@ esptool.py --chip esp32-s3 --port /dev/ttyUSB0 --baud 921600 write_flash -z 0x0 
 
 | Key                  | What it does                                  |
 | -------------------- | --------------------------------------------- |
-| Trackball up/down    | Scroll the message window                     |
-| Trackball left/right | Previous / next window (when the input is empty) |
+| Trackball up/down    | Move focus; scrolls the message window in IRC  |
+| Trackball left/right | Adjust the focused control; changes window in IRC |
 | Trackball click      | Select whatever has focus                     |
-| `esc`                | Back to the launcher                          |
-| Drag the status bar  | Open the quick settings shade                 |
+| **Trackball hold**   | **Back to the home screen, from anywhere**    |
+| Back arrow, top left | Leave the current app                         |
 | Hold `w` at boot     | Erase every setting and reboot                |
+
+The T-Deck keyboard has no escape key, which is why holding the trackball is the way out.
 
 ### IRC commands
 
@@ -86,21 +92,34 @@ esptool.py --chip esp32-s3 --port /dev/ttyUSB0 --baud 921600 write_flash -z 0x0 
 | `/connect`             | Connect to the configured server        |
 | `/disconnect`          | Disconnect and stay offline             |
 | `/quit [message]`      | Quit with a message                     |
+| `/mode [#chan] <modes>`| Set or query modes                      |
+| `/op` `/deop` `/voice` `/devoice` | Channel privileges           |
+| `/kick` `/ban` `/unban` `/kickban` | Moderation                  |
+| `/invite <nick>`       | Invite someone                          |
+| `/list`                | List channels (results in the status window) |
+| `/whois` `/whowas` `/who` `/ison` | Look people up               |
+| `/away [reason]` `/back` | Set or clear away                     |
 | `/raw <line>`          | Send a raw protocol line                |
 | `/clear`               | Clear the current window                |
-| `/settings`            | Open the settings app                   |
+| `/settings` `/channels`| Open the IRC settings or channel list   |
 | `/0` .. `/9`           | Jump to a window by number              |
 | `/help`                | List these                              |
+
+Anything not listed is upper-cased and sent to the server as typed, so `/lusers`, `/motd`,
+`/stats` and anything else the server supports work without the firmware knowing about them.
+`//text` sends a line that really does start with a slash.
 
 ### Settings
 
 Everything lives in one registry in `src/core/Settings.cpp`. Adding an option means adding one
 row there: storage, the settings screen and JSON import/export are all generated from it.
 
-Sections: Device, Display, Sound, Power, WiFi, IRC, IRC auth, IRC timing, IRC display, GPS,
-LoRa, Bluetooth, Advanced.
+The registry is split into two groups. The **Settings** app shows Device, Display, Sound, Power,
+WiFi, GPS, LoRa, Bluetooth and Advanced. The **IRC app's own gear button** shows Server,
+Identity, Authentication, Connection and Appearance, so the client is configured where it is
+used.
 
-The timing values that control reconnect behaviour are under **IRC timing**:
+The values that control reconnect behaviour are under **Connection**:
 
 | Setting              | Default | Meaning                                          |
 | -------------------- | ------- | ------------------------------------------------ |
@@ -142,24 +161,26 @@ src/
   core/      settings registry and logging
   irc/       message parser and the client state machine
   net/       WiFi association, scanning and clock sync
-  ui/        theme, status bar, shade, and the character-cell renderer
+  ui/        theme, status bar, and the character-cell renderer
   apps/      launcher, IRC, settings, WiFi, syslog, about
 ```
 
 ## Known limitations
 
-- Connecting to IRC blocks the UI for a second or two. The Arduino socket API has no
-  non-blocking connect and a TLS handshake on an ESP32 is not fast. Moving the client to its own
-  task is the fix, and it has not been done yet.
 - Certificate verification only works if you put a CA bundle at `/irc-ca.pem` on the SD card.
   Without one the device says so and connects unverified rather than pretending otherwise.
 - ANSI art wider than the screen needs horizontal scrolling, which is not implemented; wide art
   is wrapped instead.
+- The terminal font has no size between 6x14 and 9x20: Menlo's advance only lands on a whole
+  pixel at a few sizes, and a fractional advance is what puts seams in box-drawing art. Use
+  Display > Line spacing to pack rows tighter.
+- The SD card is only mounted when something actually needs it, and nothing does yet except
+  settings export and the optional TLS certificate.
 
 ## Roadmap
 
-- [ ] Move the IRC client onto its own FreeRTOS task
 - [ ] Horizontal scrolling for wide ANSI art
+- [ ] SD card browser with used/free space
 - [ ] Notification centre for IRC, Gotify and Meshtastic
 - [ ] Wardriving, evil portal, local network probe
 - [ ] Gotify and Meshtastic bridges
