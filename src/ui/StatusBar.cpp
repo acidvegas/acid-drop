@@ -8,7 +8,6 @@
 #include "board/Power.h"
 #include "core/Settings.h"
 #include "net/WifiService.h"
-#include "ui/Shade.h"
 #include "ui/Theme.h"
 
 namespace statusbar {
@@ -24,11 +23,6 @@ lv_obj_t* s_ble          = nullptr;
 lv_obj_t* s_wifi         = nullptr;
 lv_obj_t* s_battery      = nullptr;
 lv_obj_t* s_batteryText  = nullptr;
-
-// Drag state for the pull-down gesture.
-int32_t s_dragStartY   = 0;
-bool    s_dragging     = false;
-bool    s_dragDecided  = false;
 
 const char* batterySymbol(uint8_t percent) {
     if (percent >= 85) return LV_SYMBOL_BATTERY_FULL;
@@ -51,51 +45,6 @@ void setIconState(lv_obj_t* icon, bool active, lv_color_t activeColor) {
                                 active ? activeColor : lv_color_hex(theme::kTextFaint), 0);
 }
 
-void barEventCb(lv_event_t* event) {
-    const lv_event_code_t code = lv_event_get_code(event);
-    lv_indev_t* indev = lv_indev_active();
-    if (!indev || lv_indev_get_type(indev) != LV_INDEV_TYPE_POINTER) {
-        if (code == LV_EVENT_CLICKED) shade::toggle();
-        return;
-    }
-
-    lv_point_t point;
-    lv_indev_get_point(indev, &point);
-
-    switch (code) {
-        case LV_EVENT_PRESSED:
-            s_dragStartY  = point.y;
-            s_dragging    = false;
-            s_dragDecided = false;
-            break;
-
-        case LV_EVENT_PRESSING: {
-            const int32_t delta = point.y - s_dragStartY;
-            // A few pixels of slop so a tap is not read as a drag.
-            if (!s_dragDecided && delta > 6) {
-                s_dragDecided = true;
-                s_dragging    = true;
-                shade::beginDrag();
-            }
-            if (s_dragging) shade::dragTo(delta);
-            break;
-        }
-
-        case LV_EVENT_RELEASED:
-        case LV_EVENT_PRESS_LOST:
-            if (s_dragging) {
-                shade::endDrag();
-                s_dragging = false;
-            } else if (!s_dragDecided) {
-                shade::toggle();
-            }
-            break;
-
-        default:
-            break;
-    }
-}
-
 } // namespace
 
 void create(lv_obj_t* parent) {
@@ -109,13 +58,9 @@ void create(lv_obj_t* parent) {
     lv_obj_set_style_border_color(s_bar, lv_color_hex(theme::kBorder), 0);
     lv_obj_set_style_border_width(s_bar, 1, 0);
     lv_obj_set_scrollable(s_bar, false);
-    lv_obj_set_clickable(s_bar, true);
-
-    lv_obj_add_event_cb(s_bar, barEventCb, LV_EVENT_PRESSED,    nullptr);
-    lv_obj_add_event_cb(s_bar, barEventCb, LV_EVENT_PRESSING,   nullptr);
-    lv_obj_add_event_cb(s_bar, barEventCb, LV_EVENT_RELEASED,   nullptr);
-    lv_obj_add_event_cb(s_bar, barEventCb, LV_EVENT_PRESS_LOST, nullptr);
-    lv_obj_add_event_cb(s_bar, barEventCb, LV_EVENT_CLICKED,    nullptr);
+    // Deliberately not clickable: it used to be the handle for a pull-down
+    // panel, and swallowed presses meant for the controls just below it.
+    lv_obj_set_clickable(s_bar, false);
 
     // Left: clock and the notification dot.
     s_clock = lv_label_create(s_bar);
