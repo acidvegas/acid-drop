@@ -55,6 +55,18 @@ void drawBootLogo() {
     display::setBrightness(settings::getInt("brightness"));
 }
 
+// Everything on the shared SPI2 bus has to be deselected before the bus is
+// used, or a device with a floating chip-select will sample traffic meant for
+// another one as its own commands. The LoRa radio matters most here: it is
+// disabled by default, so nothing else ever touches its CS line.
+void deselectSpiDevices() {
+    pinMode(BOARD_SDCARD_CS, OUTPUT);
+    digitalWrite(BOARD_SDCARD_CS, HIGH);
+
+    pinMode(RADIO_CS_PIN, OUTPUT);
+    digitalWrite(RADIO_CS_PIN, HIGH);
+}
+
 bool mountSdCard() {
     pinMode(BOARD_SDCARD_CS, OUTPUT);
     digitalWrite(BOARD_SDCARD_CS, HIGH);
@@ -116,6 +128,7 @@ void setup() {
     drawBootLogo();
 
     bootStage("spi");
+    deselectSpiDevices();
     SPI.begin(BOARD_SPI_SCK, BOARD_SPI_MISO, BOARD_SPI_MOSI);
 
     bootStage("sd card");
