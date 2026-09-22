@@ -5,6 +5,12 @@
 LV_FONT_DECLARE(acid_mono_10);
 LV_FONT_DECLARE(acid_mono_15);
 
+// Chained from the mono fonts via lv_font_t.fallback: Latin, Greek, Cyrillic,
+// punctuation, arrows, symbols, the Mathematical Alphanumeric block that IRC
+// uses for styled text, and monochrome emoji. LVGL resolves the chain itself.
+LV_FONT_DECLARE(acid_fallback_10);
+LV_FONT_DECLARE(acid_fallback_15);
+
 // One place for the palette and the shared styles, so screens do not each
 // invent their own greys.
 

@@ -89,6 +89,7 @@ constexpr char RESET = '\x0F';
 // must not touch it again); otherwise the client owns it once `done` is set.
 struct ConnectJob {
     String        host;
+    uint32_t      fallbackAddress = 0;   // used when DNS fails
     uint16_t      port      = 0;
     bool          tls       = false;
     String        caPem;                 // empty means do not verify
@@ -118,9 +119,18 @@ void connectTask(void* arg) {
     // Resolve first and record it, so a DNS failure is distinguishable from
     // the server refusing or resetting the connection. Logged by the caller:
     // the log buffer is not safe to touch from this task.
-    WiFi.hostByName(job->host.c_str(), job->resolved);
+    const bool resolved = WiFi.hostByName(job->host.c_str(), job->resolved);
 
-    const bool ok = socket->connect(job->host.c_str(), job->port);
+    bool ok;
+    if (!resolved && job->fallbackAddress != 0) {
+        // DNS is down but we have reached this server before. Dial the address
+        // it had last time rather than failing the whole attempt.
+        const IPAddress previous(job->fallbackAddress);
+        job->resolved = previous;
+        ok = socket->connect(previous, job->port);
+    } else {
+        ok = socket->connect(job->host.c_str(), job->port);
+    }
 
     // Publish and exit. The task never frees the job or the socket: the client
     // owns both, and splitting that ownership across two threads left the job
@@ -265,7 +275,8 @@ void IrcClient::startConnect() {
     m_usingTls = tls;
 
     auto* job = new ConnectJob();
-    job->host = host;
+    job->host            = host;
+    job->fallbackAddress = m_lastGoodAddress;
     job->port = static_cast<uint16_t>(port);
     job->tls  = tls;
 
@@ -347,7 +358,7 @@ void IrcClient::pollConnect() {
               (unsigned)ESP.getFreeHeap());
 
         if (!resolvedOk) {
-            addStatus("Cannot resolve the server name - check DNS or the network",
+            addStatus("Cannot resolve the server name - DNS is not answering",
                       LINE_ERROR);
         } else {
             // Reaching the host and being refused is a different problem from
@@ -369,6 +380,11 @@ void IrcClient::pollConnect() {
         }
         scheduleReconnect();
         return;
+    }
+
+    // Remember where the name pointed, for the next time DNS is unavailable.
+    if (resolved != IPAddress(0, 0, 0, 0)) {
+        m_lastGoodAddress = static_cast<uint32_t>(resolved);
     }
 
     m_socket.reset(socket);
@@ -1156,10 +1172,10 @@ void IrcClient::processJoinQueue() {
         buffer->requested = true;
         sendRaw(command);
 
-        if (buffer->retryCount > 1) {
-            LOG_I(TAG, "join attempt %u for %s (%s)",
-                  buffer->retryCount, buffer->name.c_str(), buffer->retryReason.c_str());
-        }
+        LOG_I(TAG, "sent JOIN for %s (attempt %u%s%s)",
+              buffer->name.c_str(), buffer->retryCount,
+              buffer->retryReason.isEmpty() ? "" : ", last refusal: ",
+              buffer->retryReason.c_str());
 
         // If the join fails we will hear about it as a numeric and reschedule.
         // If it succeeds, JOIN clears the retry state. Either way, arm a
@@ -1181,6 +1197,9 @@ void IrcClient::scheduleJoinRetry(IrcBuffer& target, const String& reason) {
 
     target.retryReason = reason;
     target.retryAt     = millis() + m_cfg.lockDelayS * 1000UL;
+
+    LOG_W(TAG, "join refused for %s: %s (retrying in %lus)",
+          target.name.c_str(), reason.c_str(), (unsigned long)m_cfg.lockDelayS);
 
     // Only say so the first few times; after that it is just noise.
     if (target.retryCount <= 3) {
@@ -1279,11 +1298,10 @@ void IrcClient::part(const String& channel, const String& reason) {
         buffer->retryAt     = 0;
         buffer->retryReason = "";
     }
-    // Parting is a deliberate act, so stop auto-joining it next time too.
-    if (IrcChannelConfig* saved = channels::find(channel)) {
-        saved->autojoin = false;
-        channels::save();
-    }
+    // The saved configuration is left alone. Parting is about this session;
+    // turning autojoin off here meant a channel silently stopped being joined
+    // on every future boot, with nothing on screen to say why. Autojoin is
+    // changed in the channel editor, where it is visible.
     sendRaw("PART " + channel + (reason.isEmpty() ? String() : " :" + reason));
 }
 

@@ -84,6 +84,11 @@ void begin() {
 
     prefs.end();
     LOG_I(TAG, "%u channels loaded", (unsigned)s_channels.size());
+    for (const auto& channel : s_channels) {
+        LOG_I(TAG, "  %s autojoin=%d retry=%d key=%s",
+              channel.name.c_str(), channel.autojoin ? 1 : 0, channel.retry ? 1 : 0,
+              channel.key.isEmpty() ? "-" : "set");
+    }
 }
 
 const std::vector<IrcChannelConfig>& all() { return s_channels; }
@@ -134,11 +139,20 @@ void moveUp(size_t index) {
 
 void rememberJoin(const String& name, const String& key) {
     if (IrcChannelConfig* existing = find(name)) {
-        // Only the key can change; leave the user's autojoin choice alone.
+        // Joining a channel by hand is as clear a statement of intent as
+        // adding it to the list, so it goes back on autojoin. Parting clears
+        // that flag, and without this a channel could never get back on the
+        // list once it had been parted once.
+        bool changed = false;
         if (!key.isEmpty() && existing->key != key) {
             existing->key = key;
-            save();
+            changed = true;
         }
+        if (!existing->autojoin) {
+            existing->autojoin = true;
+            changed = true;
+        }
+        if (changed) save();
         return;
     }
 

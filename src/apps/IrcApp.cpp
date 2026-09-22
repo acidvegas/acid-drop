@@ -252,6 +252,10 @@ void openInfoPanel() {
 void applyTopBar() {
     const bool show = settings::getBool("irc_topbar");
     if (s_tabRow) lv_obj_set_hidden(s_tabRow, !show);
+
+    // The status bar goes with it: together they are worth four lines of
+    // backlog on a 240px screen.
+    if (statusbar::object()) lv_obj_set_hidden(statusbar::object(), !show);
     if (s_barToggleLabel) {
         lv_label_set_text(s_barToggleLabel, show ? LV_SYMBOL_UP : LV_SYMBOL_DOWN);
     }
@@ -525,6 +529,9 @@ void create(lv_obj_t* parent) {
 }
 
 void destroy() {
+    // Never leave the status bar hidden for the next app.
+    if (statusbar::object()) lv_obj_set_hidden(statusbar::object(), false);
+
     s_alive = false;
     closeInfoPanel();
     input::clearKeyHook();

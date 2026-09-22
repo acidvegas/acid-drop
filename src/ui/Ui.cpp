@@ -187,16 +187,14 @@ void back() {
     if (s_current == AppId::Channels && channelsapp::handleBack()) return;
     if (s_current == AppId::Launcher) return;
 
-    AppId destination = AppId::Launcher;
-    if (!s_stack.empty()) {
-        destination = s_stack.back();
-        s_stack.pop_back();
-    }
+    // Always the launcher. A stack meant that leaving Settings dropped you
+    // back into IRC rather than home, which is not what "back" looks like.
+    const AppId destination = AppId::Launcher;
+    s_stack.clear();
 
-    // openApp would push the app we are leaving straight back on, so step
-    // around it: this is a pop, not a new navigation.
     hooksFor(s_current).destroy();
     lv_obj_clean(s_content);
+    statusbar::setTitle("");
     s_current  = destination;
     s_appBuilt = true;
     hooksFor(destination).create(s_content);

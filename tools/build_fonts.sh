@@ -67,9 +67,69 @@ RANGES=(
 
 # Menlo advance is 0.60205em, so only a few sizes land on a whole pixel.
 # A fractional advance would put seams in box-drawing art, so stick to these.
-gen() {
+# The terminal font is deliberately narrow: CP437 only, monospace, whole-pixel
+# advance. Everything outside that comes from a fallback font, which LVGL walks
+# automatically when a glyph is missing (lv_font_t.fallback, resolved
+# recursively in lv_font.c).
+UNICODE_FONT="${ACID_UNICODE_FONT:-/System/Library/Fonts/Supplemental/Arial Unicode.ttf}"
+MATH_FONT="${ACID_MATH_FONT:-/System/Library/Fonts/Supplemental/STIXTwoMath.otf}"
+
+# macOS only ships Apple Color Emoji, which is a colour bitmap font (CBDT) and
+# cannot be converted - lv_font_conv reads outlines. Noto Emoji is the
+# monochrome outline build of the same set, vendored here so the build does not
+# depend on the network. Monochrome is the right choice anyway: at 10px a
+# colour emoji would be an unreadable smudge.
+EMOJI_FONT="${ACID_EMOJI_FONT:-$(dirname "$0")/fonts/NotoEmoji-Regular.ttf}"
+
+# Broad coverage, bounded so the tables stay a sane size. Arial Unicode carries
+# the scripts and symbols; STIX carries the Mathematical Alphanumeric block,
+# which is what IRC uses for bold and italic text and which almost no other
+# font has.
+FALLBACK_RANGES=(
+  -r 0x00A0-0x024F    # Latin-1 supplement, Latin Extended-A and B
+  -r 0x0250-0x02FF    # IPA and spacing modifiers
+  -r 0x0370-0x03FF    # Greek
+  -r 0x0400-0x04FF    # Cyrillic
+  -r 0x2000-0x206F    # general punctuation
+  -r 0x20A0-0x20BF    # currency
+  -r 0x2100-0x214F    # letterlike symbols
+  -r 0x2150-0x218F    # number forms
+  -r 0x2190-0x21FF    # arrows
+  -r 0x2200-0x22FF    # mathematical operators
+  -r 0x2300-0x23FF    # miscellaneous technical
+  -r 0x2460-0x24FF    # enclosed alphanumerics
+  -r 0x25A0-0x25FF    # geometric shapes
+  -r 0x2600-0x26FF    # miscellaneous symbols
+  -r 0x2700-0x27BF    # dingbats
+)
+MATH_RANGES=( -r 0x1D400-0x1D7FF )   # styled letters and digits
+
+EMOJI_RANGES=(
+  -r 0x1F300-0x1F5FF   # miscellaneous symbols and pictographs
+  -r 0x1F600-0x1F64F   # emoticons
+  -r 0x1F680-0x1F6FF   # transport and map
+  -r 0x1F900-0x1F9FF   # supplemental symbols and pictographs
+  -r 0x1FA70-0x1FAFF   # symbols and pictographs extended-A
+)
+
+genFallback() {
   local size="$1" name="$2"
-  echo "  -> $name (${size}px)"
+  echo "  -> $name (${size}px, unicode + maths + emoji fallback)"
+  lv_font_conv \
+    --font "$UNICODE_FONT" --size "$size" "${FALLBACK_RANGES[@]}" \
+    --font "$MATH_FONT"    --size "$size" "${MATH_RANGES[@]}" \
+    --font "$EMOJI_FONT"   --size "$size" "${EMOJI_RANGES[@]}" \
+    --format lvgl \
+    --bpp 4 \
+    --no-compress \
+    --force-fast-kern-format \
+    --lv-include lvgl.h \
+    -o "$OUT/$name.c"
+}
+
+gen() {
+  local size="$1" name="$2" fallback="$3"
+  echo "  -> $name (${size}px, falls back to $fallback)"
   lv_font_conv \
     --font "$FONT" \
     --size "$size" \
@@ -79,11 +139,14 @@ gen() {
     --no-compress \
     --force-fast-kern-format \
     --lv-include lvgl.h \
+    --lv-fallback "$fallback" \
     -o "$OUT/$name.c"
 }
 
 mkdir -p "$OUT"
-gen 10 acid_mono_10   # 6x14 cells -> 53x13 grid
-gen 15 acid_mono_15   # 9x20 cells -> 35x9  grid
+genFallback 10 acid_fallback_10
+genFallback 15 acid_fallback_15
+gen 10 acid_mono_10 acid_fallback_10   # 6x14 cells -> 53x13 grid
+gen 15 acid_mono_15 acid_fallback_15   # 9x20 cells -> 35x9  grid
 
 echo "done"
