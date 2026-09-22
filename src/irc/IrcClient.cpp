@@ -710,7 +710,12 @@ void IrcClient::handleNumeric(const IrcMessage& message) {
             return;
 
         case 324: { // RPL_CHANNELMODEIS
-            IrcBuffer& channel = ensureBuffer(message.param(1), BufferKind::Channel);
+            // findBuffer, not ensureBuffer: a numeric must never conjure a
+            // window. The server sends these for a channel it forced us into,
+            // which arrive after we have already parted it.
+            IrcBuffer* found = findBuffer(message.param(1));
+            if (found == nullptr) return;
+            IrcBuffer& channel = *found;
             String modes;
             for (size_t i = 2; i < message.params.size(); i++) {
                 if (i > 2) modes += ' ';
@@ -721,14 +726,18 @@ void IrcClient::handleNumeric(const IrcMessage& message) {
         }
 
         case 332: { // RPL_TOPIC
-            IrcBuffer& channel = ensureBuffer(message.param(1), BufferKind::Channel);
+            IrcBuffer* found = findBuffer(message.param(1));
+            if (found == nullptr) return;
+            IrcBuffer& channel = *found;
             channel.topic = message.param(2);
             addLine(channel, ctrlColor(10) + "*" + RESET + " Topic: " + channel.topic, LINE_TOPIC);
             return;
         }
 
         case 353: { // RPL_NAMREPLY
-            IrcBuffer& channel = ensureBuffer(message.param(2), BufferKind::Channel);
+            IrcBuffer* found = findBuffer(message.param(2));
+            if (found == nullptr) return;
+            IrcBuffer& channel = *found;
 
             // First reply of a batch replaces the list; the rest append. NAMES
             // can be re-requested at any time, and without this the roster
@@ -746,7 +755,9 @@ void IrcClient::handleNumeric(const IrcMessage& message) {
         }
 
         case 366: { // RPL_ENDOFNAMES
-            IrcBuffer& channel = ensureBuffer(message.param(1), BufferKind::Channel);
+            IrcBuffer* found = findBuffer(message.param(1));
+            if (found == nullptr) return;
+            IrcBuffer& channel = *found;
             channel.namesLoading = false;
             addLine(channel, ctrlColor(14) + "* " + String(channel.nicks.size()) +
                              " users" + RESET, LINE_SERVER);
@@ -770,8 +781,11 @@ void IrcClient::handleNumeric(const IrcMessage& message) {
                                                : message.params[message.params.size() - 1];
 
     if (isChannelNumeric(code) && message.params.size() >= 2 && irc::isChannel(message.param(1))) {
-        IrcBuffer& channel = ensureBuffer(message.param(1), BufferKind::Channel);
-        addLine(channel, text, LINE_SERVER);
+        if (IrcBuffer* channel = findBuffer(message.param(1))) {
+            addLine(*channel, text, LINE_SERVER);
+        } else if (!m_cfg.showRaw) {
+            addStatus(text, LINE_SERVER);   // no window for it, and none wanted
+        }
     } else if (!m_cfg.showRaw) {
         (void)stamp;
         addStatus(text, code >= 400 ? LINE_ERROR : LINE_SERVER);
@@ -1074,8 +1088,8 @@ void IrcClient::handleMode(const IrcMessage& message) {
                         " sets mode " + modes;
 
     if (irc::isChannel(target)) {
-        IrcBuffer& channel = ensureBuffer(target, BufferKind::Channel);
-        addLine(channel, text, LINE_MODE);
+        if (IrcBuffer* channel = findBuffer(target)) addLine(*channel, text, LINE_MODE);
+        else                                        addStatus(text, LINE_MODE);
     } else {
         addStatus(text, LINE_MODE);
     }
@@ -1085,7 +1099,9 @@ void IrcClient::handleTopic(const IrcMessage& message) {
     const String channelName = message.param(0);
     const String topic       = message.param(1);
 
-    IrcBuffer& channel = ensureBuffer(channelName, BufferKind::Channel);
+    IrcBuffer* found = findBuffer(channelName);
+    if (found == nullptr) return;
+    IrcBuffer& channel = *found;
     channel.topic = topic;
     addLine(channel,
             ctrlColor(10) + "*" + RESET + " " + formatNick(message.nick) +
