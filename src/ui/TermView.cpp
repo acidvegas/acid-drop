@@ -70,6 +70,34 @@ bool drawBlockCell(lv_layer_t* layer, const lv_area_t& cell, const TermCell& sou
     return true;
 }
 
+// Whether the font can draw a code point, remembered so the answer is looked
+// up once rather than on every redraw of every frame. A glyph the font does
+// not have goes down LVGL's placeholder path, and a line full of them - which
+// is what styled or emoji text is - makes scrolling crawl.
+bool fontHasGlyph(const lv_font_t* font, uint32_t code) {
+    struct Entry { uint32_t code; bool present; };
+    static Entry cache[64];
+    static uint8_t next = 0;
+    static const lv_font_t* cachedFor = nullptr;
+
+    if (cachedFor != font) {          // font changed, the answers are stale
+        cachedFor = font;
+        for (Entry& entry : cache) entry.code = 0;
+        next = 0;
+    }
+
+    for (const Entry& entry : cache) {
+        if (entry.code == code) return entry.present;
+    }
+
+    lv_font_glyph_dsc_t dsc;
+    const bool present = lv_font_get_glyph_dsc(font, &dsc, code, 0);
+
+    cache[next] = {code, present};
+    next = (next + 1) % 64;
+    return present;
+}
+
 } // namespace
 
 // --- TermDoc -------------------------------------------------------------
@@ -425,7 +453,13 @@ void TermView::draw(lv_event_t* event) {
 
             if (drawBlockCell(layer, box, cell)) continue;
 
-            glyph.unicode = cell.ch;
+            // lv_font_get_glyph_dsc walks the fallback chain, so this is only
+            // false when nothing in the chain can draw it - colour emoji,
+            // mostly, which a monochrome bitmap font cannot represent. Show a
+            // box rather than a blank, so it is obvious something is there.
+            const uint32_t code = fontHasGlyph(m_font, cell.ch) ? cell.ch : 0x25A1;
+
+            glyph.unicode = code;
             glyph.color   = cell.fg;
             glyph.skew_x  = (cell.flags & CELL_ITALIC) ? 12 : 0;
             glyph.decor   = (cell.flags & CELL_UNDERLINE) ? LV_TEXT_DECOR_UNDERLINE

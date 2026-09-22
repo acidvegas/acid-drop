@@ -2,6 +2,10 @@
 // https://github.com/acidvegas/acid-drop
 
 #include <Arduino.h>
+#include <esp_system.h>
+#include <esp_task_wdt.h>
+#include <esp_system.h>
+#include <esp_task_wdt.h>
 #include <SPI.h>
 #include <lvgl.h>
 
@@ -23,6 +27,27 @@
 namespace {
 
 constexpr const char* TAG = "boot";
+
+// A hang cannot be watched over serial here: attaching a monitor resets the
+// chip through the USB-JTAG bridge, which destroys the state being
+// investigated. So the firmware records it instead - the watchdog turns a
+// silent freeze into a panic, and the reason survives into the next boot.
+constexpr uint32_t kWatchdogSeconds = 15;
+
+const char* resetReasonName(esp_reset_reason_t reason) {
+    switch (reason) {
+        case ESP_RST_POWERON:   return "power on";
+        case ESP_RST_EXT:       return "reset pin";
+        case ESP_RST_SW:        return "software restart";
+        case ESP_RST_PANIC:     return "PANIC or exception";
+        case ESP_RST_INT_WDT:   return "interrupt watchdog";
+        case ESP_RST_TASK_WDT:  return "TASK WATCHDOG - the main loop stalled";
+        case ESP_RST_WDT:       return "watchdog";
+        case ESP_RST_DEEPSLEEP: return "deep sleep wake";
+        case ESP_RST_BROWNOUT:  return "BROWNOUT - the supply dipped";
+        default:                return "unknown";
+    }
+}
 
 // Boot progress, written to the panel as well as the log.
 //
@@ -95,7 +120,12 @@ void checkRecoveryKey() {
 void setup() {
     logging::begin(115200);
     delay(150);
-    LOG_I(TAG, "ACID DROP starting");
+    const esp_reset_reason_t reason = esp_reset_reason();
+    LOG_I(TAG, "ACID DROP starting (last reset: %s)", resetReasonName(reason));
+    if (reason == ESP_RST_PANIC || reason == ESP_RST_TASK_WDT ||
+        reason == ESP_RST_INT_WDT || reason == ESP_RST_BROWNOUT) {
+        LOG_E(TAG, "the previous run ended badly: %s", resetReasonName(reason));
+    }
 
     // Peripheral power rail first; nothing else on the board answers without it.
     pinMode(BOARD_POWERON, OUTPUT);
@@ -153,10 +183,23 @@ void setup() {
     bootStage("running");
     lv_refr_now(nullptr);
 
+    // Watch the loop task from here on. Anything that blocks it for longer
+    // than the timeout panics instead of hanging silently, and the reason is
+    // reported at the top of the next boot.
+    esp_task_wdt_init(kWatchdogSeconds, true);
+    esp_task_wdt_add(nullptr);
+    LOG_I(TAG, "loop watchdog armed at %lus", (unsigned long)kWatchdogSeconds);
+
+    esp_task_wdt_init(kWatchdogSeconds, true);
+    esp_task_wdt_add(nullptr);
+    LOG_I(TAG, "loop watchdog armed at %lus", (unsigned long)kWatchdogSeconds);
+
     LOG_I(TAG, "boot complete, %u KB heap free", ESP.getFreeHeap() / 1024);
 }
 
 void loop() {
+    esp_task_wdt_reset();
+
     // Drivers first, so LVGL sees this frame's input.
     input::loop();
     power::loop();

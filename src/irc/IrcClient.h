@@ -172,6 +172,11 @@ private:
     bool     m_wantConnection = false;
 
     // --- identity ---
+    // Last address the server name resolved to. DNS on a flaky link fails
+    // intermittently, and re-resolving from scratch every attempt turns a
+    // momentary lookup failure into a failed connection.
+    uint32_t m_lastGoodAddress = 0;
+
     String m_nick;
     uint8_t m_nickAttempt = 0;
 
