@@ -2,114 +2,96 @@
   <img src="./.screens/aciddrop2.png" />
 </p>
 
-# Work in progress
-This is a custom firmware being developed for the [LilyGo T-Deck](https://www.lilygo.cc/products/t-deck), currently it is experimental & buggy while we are in beta status.
+# ACID DROP
 
-If you are familiar with or use [Internet Relay Chat](https://en.wikipedia.org/wiki/IRC), we have a team of developers working on this project in **#comms** on **[irc.supernets.org](irc://irc.supernets.org)**, join us if you have ideas, bugs, or want to get your hands dirty & develope this project with us.
+IRC client firmware for the [LilyGo T-Deck Plus](https://www.lilygo.cc/products/t-deck) and the original T-Deck. It boots straight into the chat window and does nothing but IRC.
 
-Consider sponsoring our project, all the money goes towards motivation to develope on this, we also like buying T-Decks for people who want to learn about this stuff!
+Development happens in **#superbowl** on **[irc.supernets.org](irc://irc.supernets.org)**.
 
 ![](./.screens/preview.png)
 
-![](./.screens/lvgl.png)
+## Features
 
-# Flashing the Firmware
-###### Using VS Code
-1. Add your user to the `dialout` group: `sudo gpasswd -a YOURUSERNAME dialout` *(You will need to re-login after adding your user to the `dialout` group for it to take affect)*
-2. Install [Visual Studio Code](https://code.visualstudio.com/)
-3. Install the [PlatformIO plugin](https://platformio.org/install/ide?install=vscode)
-4. Hold down the trackball on the device, turn it on, and plug it in to the computer.
-5. Press **F1** and select `PlatformIO: Build`
-6. Press **F1** and select `PlatformIO: Upload`
-7. Press the RST *(reset)* button on the device.
+- Connects directly to an IRC server, through a **ZNC** bouncer, or to a **WeeChat relay**
+- ASCII/ANSI art, Unicode, emoji, and full mIRC colours & formatting
+- TLS with optional certificate verification, SASL PLAIN, and NickServ
+- Multiple windows for the server, channels, and private messages
+- Nick and command completion
+- Auto-reconnect, rejoin on kick, and retrying of `+i`, `+k`, `+b` and full channels
+- Per-channel keys and auto-join, and an ignore list with wildcard masks
+- Channel details: modes, topic, and nick list
+- Themeable colours and a settings menu on the device, all applied live
 
-###### Using ESP Tool
-1. Take the `firmware.bin` file from the release page and download it.
-2. Install [esptool](https://pypi.org/project/esptool/): `pip install esptool`
-3. Hold down the trackball on the device, turn it on, and plug it in to the computer.
-4. Confirm the serial device in your `/dev` directory *(Your device will likely be `/dev/ttyAMC0` or `/dev/ttyUSB0`)*
-5. Flash the device: `esptool.py --chip esp32-s3 --port /dev/ttyUSB0 --baud 115200 write_flash -z 0x1000 firmware.bin`
-6. Press the RST *(reset)* button on the device.
+## Flashing
 
-# Command & Control
-###### Menu controls
-On boot, if you press the `w` key, it will wipe all of the stored preferences.
+Requires [PlatformIO](https://platformio.org/).
 
-The device will scan for WiFi networks on boot. Once the list is displayed, you can scroll up and down the list with the `u` key for UP and the `d` key for down.
+```sh
+pio run -e t-deck-plus -t upload    # T-Deck Plus
+pio run -e t-deck      -t upload    # original T-Deck
+```
 
-###### IRC commands
-| Command         | Description                 |
-| --------------- | --------------------------- |
-| `/info`         | Show hardware information   |
-| `/me <message>` | Send an ACTION message      |
-| `/nick <new>`   | Change your NICK on IRC     |
-| `/raw <data>`   | Send RAW data to the server |
+Hold the trackball down, turn the device on, then plug it in to enter download mode.
 
-# Debugging over Serial
-1. Install screen: `apt-get install screen` *(or whatever package manager you use)*
-2. Plug in your device via USB.
-2. Turn the device on, and run: `screen /dev/ttyAMC0 9600` *(again, this can also be /dev/ttyUSB0)*
+The upload port in `platformio.ini` is set to `/dev/cu.usbmodem*`, which is the macOS path. On Linux, add yourself to the `dialout` group and pass the port yourself:
 
-# Roapmap
-###### Device functionality
-- [X] Screen timeout on inactivity *(default 30 seconds)*
-  - [ ] Keyboard backlight timeout with screen timeout
-- [ ] Trackball support
-- [X] Speaker support
-  - [X] Bootup sounds
-  - [X] IRC mention sounds
-- [ ] GPS support
-- [ ] Lora support
-- [ ] BLE support
-- [ ] SD card support
+```sh
+pio run -e t-deck-plus -t upload --upload-port /dev/ttyACM0
+```
 
-###### Features
-- [X] LVGL used for enhanced UI
-- [X] Wifi scanning & selection menu
-  - [x] Saved wifi profiles
-- [ ] Wifi Hotspot
-- [ ] Notifcations Window *(All notifications will go here, from IRC, Gotify, Meshtastic, or anything)*
-- [X] Status bar *(Time, Date, Notification, Wifi, and Battery)*
-  - [ ] XBM icons for status bar items
-- [ ] Allow specifying the IRC server, port, TLS, nick, etc...
-- [ ] Screensaver
-- [X] Serial debug logs
+Do not attach a serial monitor. On this board it resets the chip. Use **Settings > System > System log** instead.
 
-###### Applications
-- [ ] Rubber Ducky
-- [X] IRC Client
-  - [X] `/raw` command for IRC client to send raw data to the server
-  - [ ] Add scrolling backlog for IRC to see the last 200 messages
-  - [ ] Multi-buffer support *(`/join` & `/part` support with switching between buffers with `/0`, `/1`, `/2`, etc)* *(`/close` also for PM buffers or kicked from channels)*
-  - [ ] Status window for network to show RAW lines from the IRC server *(buffer 0)*
-  - [ ] Hilight monitor buffer
-  - [X] Hilight support *(so we can see when people mention our NICK)*
-  - [X] 99 color support
-  - [ ] `/pm` support *(it should open a buffer for pms)*
-  - [ ] NickServ support
-- [ ] ChatGPT
-- [ ] SSH Client
-- [ ] Wardriving
-- [ ] Evil Portal AP
-- [ ] Local Network Probe *(Scans for devices on the wifi network you are connected to, add port scanning)*
-- [ ] Gotify *(in progress)*
-- [ ] Meshtastic *(in progress)*
-- [ ] Spotify/Music player *(can we play audio throuigh Bluetoth headphones or the on-board speaker?)*
-- [ ] Syslog *(All serial logs will be displayed here for on-device debugging)*
+## Usage
 
-# Ideas
-- Replace the `ESP32-S3FN16R8` with a `ESP32-S3-WROOM-1U` which has an iPex connector for an external WiFi antenna.
+Set up WiFi under **Settings > WiFi**. The device connects on its own once the network is up.
 
-# Previews
-###### 99 Color support
-![](./.screens/99colors.png)
+### Connecting
 
-###### Full ASCII support for PUMPERS
-![](./.screens/ascii.png)
+**Settings > IRC > Server > Mode** picks how you connect. Only one mode is active at a time. Picking ZNC or WeeChat stops the device from connecting to the server set under **IRC > Server**, and switching modes disconnects the old one.
 
-###### Support for /HUEG
-![](./.screens/hueg.png)
+| Mode          | Configure under  | Notes                                                                                                                                                       |
+| ------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Direct IRC    | **IRC > Server** | The device is the IRC client and uses its own auto-join channel list                                                                                        |
+| ZNC bouncer   | **IRC > ZNC**    | Host, port, TLS, username, password, and network *(empty for the default)*. The local auto-join list is ignored, ZNC decides what channels you are in       |
+| WeeChat relay | **IRC > Relay**  | Host, port, password, and TLS. Shows every network and buffer WeeChat has. Everything you type is passed to WeeChat as-is, so its commands and aliases work |
 
-___
+### Keys
 
-###### Mirrors for this repository: [acid.vegas](https://git.acid.vegas/acid-drop) • [SuperNETs](https://git.supernets.org/acidvegas/acid-drop) • [GitHub](https://github.com/acidvegas/acid-drop) • [GitLab](https://gitlab.com/acidvegas/acid-drop) • [Codeberg](https://codeberg.org/acidvegas/acid-drop)
+| Key                  | Action                                           |
+|----------------------|--------------------------------------------------|
+| Trackball up/down    | Scroll the chat, or move focus                   |
+| Trackball left/right | Switch windows, or adjust the focused control    |
+| Trackball click      | Select                                           |
+| Trackball hold       | Back to the chat window from anywhere            |
+| `$`                  | Accept the grey completion, press again to cycle |
+| Hold `w` at boot     | Erase all settings                               |
+
+### Commands
+
+| Command                                         | Description                     |
+|-------------------------------------------------|---------------------------------|
+| `/join` `/part` `/cycle` `/close`               | Channels and windows            |
+| `/msg` `/query` `/notice` `/me` `/ctcp` `/amsg` | Messaging                       |
+| `/say <text>`                                   | Send text starting with a slash |
+| `/nick` `/away` `/back`                         | Your status                     |
+| `/topic` `/names` `/mode` `/invite` `/list`     | Channel info                    |
+| `/op` `/voice` `/halfop` *(and `de-` versions)* | Channel privileges              |
+| `/kick` `/ban` `/unban` `/kickban`              | Moderation                      |
+| `/whois` `/whowas` `/who` `/ison`               | Look people up                  |
+| `/ignore` `/unignore` `/ignores`                | Ignore list                     |
+| `/connect` `/disconnect` `/reconnect` `/quit`   | Connection                      |
+| `/server <host> [+port]`                        | Switch server, `+` means TLS    |
+| `/raw <line>`                                   | Send a raw line                 |
+| `/clear` `/window N` `/next` `/prev` `/0`..`/9` | Window control                  |
+| `/settings` `/channels` `/help`                 | Open menus, list commands       |
+
+Unknown commands are sent to the server as-is.
+
+## Known limitations
+
+- ANSI art wider than the screen is wrapped, not scrolled
+- Emoji are monochrome
+- Certificate verification only knows the roots compiled into `src/net/CaCerts.h` *(currently the Sectigo roots irc.supernets.org uses)*
+- WeeChat relay only supports plaintext password auth, not hashed
+- WeeChat relay backlog is 50 lines per buffer and is not kept across reconnects
+- GPS, LoRa, Bluetooth, the microphone, and the SD card are not used

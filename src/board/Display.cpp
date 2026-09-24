@@ -1,0 +1,254 @@
+#include "board/Display.h"
+
+#include <Arduino.h>
+#include <esp_heap_caps.h>
+
+#include "board/pins.h"
+#include "core/Log.h"
+#include "core/Settings.h"
+
+AcidLGFX gfx;
+
+AcidLGFX::AcidLGFX() {
+    {   // SPI bus. The bus is shared with the SD card and the LoRa radio, so
+        // LovyanGFX has to re-assert the bus configuration on every transaction.
+        auto cfg = _bus.config();
+        cfg.spi_host   = SPI2_HOST;
+        cfg.spi_mode   = 0;
+        cfg.freq_write = 40000000;
+        cfg.freq_read  = 16000000;
+        cfg.spi_3wire  = false;
+        cfg.use_lock   = true;
+        cfg.dma_channel = SPI_DMA_CH_AUTO;
+        cfg.pin_sclk   = BOARD_SPI_SCK;
+        cfg.pin_mosi   = BOARD_SPI_MOSI;
+        cfg.pin_miso   = BOARD_SPI_MISO;
+        cfg.pin_dc     = BOARD_TFT_DC;
+        _bus.config(cfg);
+        _panel.setBus(&_bus);
+    }
+
+    {   // ST7789 panel, mounted rotated so the keyboard edge is the bottom.
+        auto cfg = _panel.config();
+        cfg.pin_cs          = BOARD_TFT_CS;
+        cfg.pin_rst         = -1;
+        cfg.pin_busy        = -1;
+        cfg.panel_width     = 240;
+        cfg.panel_height    = 320;
+        cfg.offset_x        = 0;
+        cfg.offset_y        = 0;
+        // Stays 0: this is an offset ADDED to setRotation(), so setting it
+        // here as well would rotate twice and leave LVGL and the panel
+        // disagreeing about which dimension is which.
+        cfg.offset_rotation = 0;
+        cfg.dummy_read_pixel = 8;
+        cfg.dummy_read_bits  = 1;
+        cfg.readable        = false;
+        cfg.invert          = true;
+        cfg.rgb_order       = false;
+        cfg.dlen_16bit      = false;
+        cfg.bus_shared      = true;
+        _panel.config(cfg);
+    }
+
+    {   // PWM backlight.
+        auto cfg = _light.config();
+        cfg.pin_bl      = BOARD_TFT_BACKLIGHT;
+        cfg.invert      = false;
+        cfg.freq        = 12000;
+        cfg.pwm_channel = 7;
+        _light.config(cfg);
+        _panel.setLight(&_light);
+    }
+
+    {   // GT911 capacitive touch. LovyanGFX applies the display rotation to
+        // the reported coordinates, which is the part I got wrong by hand.
+        auto cfg = _touch.config();
+        cfg.x_min      = 0;
+        cfg.x_max      = 239;
+        cfg.y_min      = 0;
+        cfg.y_max      = 319;
+        cfg.pin_int    = BOARD_TOUCH_INT;
+        cfg.bus_shared = true;
+        cfg.offset_rotation = 0;
+        cfg.i2c_port   = 0;
+        cfg.i2c_addr   = TOUCH_I2C_ADDR_PRI;
+        cfg.pin_sda    = BOARD_I2C_SDA;
+        cfg.pin_scl    = BOARD_I2C_SCL;
+        cfg.freq       = BOARD_I2C_FREQ;
+        _touch.config(cfg);
+        _panel.setTouch(&_touch);
+    }
+
+    setPanel(&_panel);
+}
+
+void AcidLGFX::setTouchAddress(uint8_t address) {
+    auto cfg = _touch.config();
+    cfg.i2c_addr = address;
+    _touch.config(cfg);
+}
+
+namespace display {
+namespace {
+
+lv_display_t* s_disp       = nullptr;
+uint8_t       s_brightness = 200;
+bool          s_awake      = true;
+
+// Two partial buffers, a tenth of the screen each. Internal DMA-capable RAM is
+// required for SPI DMA; PSRAM buffers cannot be handed to the DMA engine.
+constexpr uint32_t kBufLines  = BOARD_TFT_HEIGHT / 10;
+constexpr uint32_t kBufPixels = BOARD_TFT_WIDTH * kBufLines;
+
+void flushCb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
+    const int32_t w = area->x2 - area->x1 + 1;
+    const int32_t h = area->y2 - area->y1 + 1;
+
+    gfx.startWrite();
+    gfx.setAddrWindow(area->x1, area->y1, w, h);
+    // `true` byte-swaps on the fly: LVGL renders native-endian RGB565 while the
+    // panel expects big-endian.
+    gfx.writePixels(reinterpret_cast<uint16_t*>(px_map), w * h, true);
+    gfx.endWrite();
+
+    lv_display_flush_ready(disp);
+}
+
+uint32_t tickCb() {
+    return millis();
+}
+
+} // namespace
+
+bool begin() {
+    // Find the controller before init: LovyanGFX only tries the address it is
+    // configured with, and these ship strapped to 0x5D or 0x14 depending on
+    // the level on the interrupt line at power-up.
+    //
+    // Probed by reading the product ID register rather than by doing a bare
+    // read. A read with no register pointer set is not a transaction the GT911
+    // is obliged to answer, so it can fail on a chip that is present and
+    // working - and a failed probe here silently leaves the wrong address
+    // configured, which looks exactly like the touchscreen being dead.
+    lgfx::i2c::init(0, BOARD_I2C_SDA, BOARD_I2C_SCL);
+
+    bool found = false;
+    for (uint8_t candidate : {TOUCH_I2C_ADDR_PRI, TOUCH_I2C_ADDR_ALT}) {
+        const uint8_t reg[2] = {0x81, 0x40};   // GT911 product ID, four bytes
+        uint8_t id[4] = {0, 0, 0, 0};
+
+        if (lgfx::i2c::transactionWriteRead(0, candidate, reg, sizeof(reg),
+                                            id, sizeof(id), BOARD_I2C_FREQ).has_value()) {
+            gfx.setTouchAddress(candidate);
+            LOG_I("display", "GT911 at 0x%02X (id %c%c%c%c)", candidate,
+                  isprint(id[0]) ? id[0] : '?', isprint(id[1]) ? id[1] : '?',
+                  isprint(id[2]) ? id[2] : '?', isprint(id[3]) ? id[3] : '?');
+            found = true;
+            break;
+        }
+    }
+
+    if (!found) {
+        LOG_E("display", "no touch controller answered at 0x%02X or 0x%02X - touch will not work",
+              TOUCH_I2C_ADDR_PRI, TOUCH_I2C_ADDR_ALT);
+    }
+
+    if (!gfx.init()) {
+        LOG_E("display", "panel init failed");
+        return false;
+    }
+
+    // "Upside down" is the same landscape axis rotated a half turn.
+    // Fixed landscape. The panel is mounted one way in the T-Deck's case and
+    // the keyboard is underneath it, so an upside-down mode was never a real
+    // choice - it just gave people a way to make the device unusable.
+    gfx.setRotation(1);
+    gfx.setBrightness(0);   // Stay dark until the first frame is drawn
+    gfx.fillScreen(0x0000);
+
+    lv_init();
+    lv_tick_set_cb(tickCb);
+
+    // Round up so the size is a whole number of alignment units as well.
+    const size_t bufBytes =
+        (kBufPixels * sizeof(uint16_t) + LV_DRAW_BUF_ALIGN - 1) & ~(size_t)(LV_DRAW_BUF_ALIGN - 1);
+
+    // Must be heap_caps_aligned_alloc, not heap_caps_malloc: LVGL rejects a
+    // draw buffer that is not aligned to LV_DRAW_BUF_ALIGN and returns without
+    // setting one, leaving the display permanently unable to render. Plain
+    // malloc only promises 4-byte alignment, so whether this worked came down
+    // to where the allocator happened to land - which made unrelated changes
+    // elsewhere turn rendering on and off.
+    void* buf1 = heap_caps_aligned_alloc(LV_DRAW_BUF_ALIGN, bufBytes,
+                                         MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    void* buf2 = heap_caps_aligned_alloc(LV_DRAW_BUF_ALIGN, bufBytes,
+                                         MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+
+    if (buf1 == nullptr) {
+        LOG_E("display", "could not allocate LVGL draw buffer (%u bytes)", (unsigned)bufBytes);
+        return false;
+    }
+    if (buf2 == nullptr) {
+        LOG_W("display", "running with a single draw buffer");
+    }
+
+    s_disp = lv_display_create(BOARD_TFT_WIDTH, BOARD_TFT_HEIGHT);
+    lv_display_set_flush_cb(s_disp, flushCb);
+
+    // Colour format before the buffers: the stride LVGL derives for them comes
+    // from the format that is set at the time.
+    lv_display_set_color_format(s_disp, LV_COLOR_FORMAT_RGB565);
+    lv_display_set_buffers(s_disp, buf1, buf2, bufBytes, LV_DISPLAY_RENDER_MODE_PARTIAL);
+
+    // Rendering silently doing nothing is the worst failure mode this driver
+    // has, so confirm the buffer actually took rather than assuming it did.
+    if (lv_display_get_buf_active(s_disp) == nullptr) {
+        LOG_E("display", "LVGL rejected the draw buffers (buf1=%p buf2=%p align=%d)",
+              buf1, buf2, (int)LV_DRAW_BUF_ALIGN);
+        gfx.setTextColor(0xF800, 0x0000);
+        gfx.setTextSize(1);
+        gfx.drawString("LVGL: no draw buffer", 4, BOARD_TFT_HEIGHT - 13);
+        return false;
+    }
+
+    LOG_I("display", "ST7789 %dx%d up, %u byte draw buffers at %p/%p",
+          BOARD_TFT_WIDTH, BOARD_TFT_HEIGHT, (unsigned)bufBytes, buf1, buf2);
+    return true;
+}
+
+void setBrightness(uint8_t value) {
+    s_brightness = value;
+    if (s_awake) gfx.setBrightness(value);
+}
+
+void sleep() {
+    if (!s_awake) return;
+    s_awake = false;
+    // Ramp down so the transition does not read as a glitch.
+    for (int v = s_brightness; v >= 0; v -= 8) {
+        gfx.setBrightness(v < 0 ? 0 : v);
+        delay(4);
+    }
+    gfx.setBrightness(0);
+}
+
+void wake() {
+    if (s_awake) return;
+    s_awake = true;
+    for (int v = 0; v <= s_brightness; v += 8) {
+        gfx.setBrightness(v);
+        delay(4);
+    }
+    gfx.setBrightness(s_brightness);
+}
+
+bool isAwake() {
+    return s_awake;
+}
+
+lv_display_t* lvDisplay() {
+    return s_disp;
+}
+
+} // namespace display
