@@ -8,7 +8,11 @@ IRC client firmware for the [LilyGo T-Deck Plus](https://www.lilygo.cc/products/
 
 Development happens in **#superbowl** on **[irc.supernets.org](irc://irc.supernets.org)**.
 
-![](./.screens/preview.png)
+<p align="center">
+  <img src="./.screens/chat.jpg" width="32%" /> <img src="./.screens/chats2.jpg" width="32%" /> <img src="./.screens/ascii.jpg" width="32%" />
+  <img src="./.screens/buffers.jpg" width="32%" /> <img src="./.screens/znc.jpg" width="32%" /> <img src="./.screens/settings.jpg" width="32%" />
+  <img src="./.screens/ircsettings.jpg" width="32%" /> <img src="./.screens/displaysettings.jpg" width="32%" /> <img src="./.screens/theme.jpg" width="32%" />
+</p>
 
 ## Features
 
