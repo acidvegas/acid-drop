@@ -1,3 +1,30 @@
-.pio
-.vscode
+# PlatformIO
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# PlatformIO creates these; they are empty unless you put something in them
+/boards/
+/lib/
+
+# Editors
+.vscode/
+.idea/
+*.code-workspace
+*.swp
+*.swo
+*~
+
+# macOS / Windows
+.DS_Store
+._*
+Thumbs.db
+
+# Build and flash leftovers
 *.bin.bak
+*.elf
+*.map
+compile_commands.json
+
+# Font generation scratch
+tools/fonts/*.tmp

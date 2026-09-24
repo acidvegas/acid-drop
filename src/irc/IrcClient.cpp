@@ -1,19 +1,52 @@
 #include "irc/IrcClient.h"
 
-#include <SD.h>
 #include <WiFi.h>
 
-#include <map>
 #include <time.h>
 
 #include "core/Log.h"
 #include "core/Settings.h"
-#include "core/Storage.h"
 #include "irc/ChannelList.h"
+#include "net/CaCerts.h"
+#include "net/WifiService.h"
 
 namespace {
 
 constexpr const char* TAG = "irc";
+
+// The username is fixed alongside kIrcSignature in the header.
+constexpr const char* kUserName = "tdeck";
+
+// Mode 1 is the ZNC bouncer. Read from settings rather than passed in, so the
+// client does not have to know about the UI layer that owns the enum.
+bool zncMode() { return settings::getEnum("chat_mode") == 1; }
+
+// Case-insensitive glob over '*' and '?', used for the ignore list so an entry
+// can be a bare nick, "bot*", or a full "nick!user@host" mask.
+bool globMatch(const char* pattern, const char* text) {
+    const char* star     = nullptr;
+    const char* resumeAt = nullptr;
+
+    while (*text) {
+        const char p = *pattern;
+        if (p == '?' || tolower(static_cast<unsigned char>(p)) ==
+                        tolower(static_cast<unsigned char>(*text))) {
+            pattern++;
+            text++;
+        } else if (p == '*') {
+            star     = pattern++;
+            resumeAt = text;
+        } else if (star != nullptr) {
+            // Backtrack: let the last '*' swallow one more character.
+            pattern = star + 1;
+            text    = ++resumeAt;
+        } else {
+            return false;
+        }
+    }
+    while (*pattern == '*') pattern++;
+    return *pattern == '\0';
+}
 
 // Numerics that mean "you did not get into that channel". Every one of them is
 // worth retrying: +i and +b can be lifted, +l frees up, +k can be set again.
@@ -74,6 +107,13 @@ bool isService(const String& nick) {
     return false;
 }
 
+// True while the replies to a channel-info request should update state
+// silently instead of printing them into the window.
+bool infoQuiet(const IrcBuffer& buffer) {
+    return buffer.infoQuietUntil != 0 &&
+           static_cast<int32_t>(millis() - buffer.infoQuietUntil) < 0;
+}
+
 String ctrlColor(uint8_t index) {
     // Control byte, up to three digits, terminator.
     char buffer[8];
@@ -92,7 +132,11 @@ struct ConnectJob {
     uint32_t      fallbackAddress = 0;   // used when DNS fails
     uint16_t      port      = 0;
     bool          tls       = false;
-    String        caPem;                 // empty means do not verify
+    // Points at the bundle in CaCerts.h, which is a compile-time constant with
+    // static storage - so it outlives the job. It has to: setCACert() only
+    // keeps the pointer, and the socket is handed on to the client while the
+    // job itself is deleted. nullptr means do not verify.
+    const char*   caPem     = nullptr;
     WiFiClient*   socket    = nullptr;
     IPAddress     resolved;              // 0.0.0.0 when DNS failed
     volatile bool done      = false;
@@ -106,8 +150,8 @@ void connectTask(void* arg) {
     WiFiClient* socket;
     if (job->tls) {
         auto* secure = new WiFiClientSecure();
-        if (job->caPem.isEmpty()) secure->setInsecure();
-        else                      secure->setCACert(job->caPem.c_str());
+        if (job->caPem == nullptr) secure->setInsecure();
+        else                       secure->setCACert(job->caPem);
         secure->setHandshakeTimeout(12);
         secure->setTimeout(12);
         socket = secure;
@@ -162,20 +206,29 @@ void IrcClient::begin() {
 void IrcClient::applySettings() {
     // Logged because these values drive every timer in the client, and a wrong
     // one looks like a network fault rather than a configuration problem.
-    m_cfg.joinDelayMs      = settings::getInt("irc_joindly");
+    // Stored in whole seconds; the state machine works in milliseconds.
+    m_cfg.joinDelayMs      = settings::getInt("irc_joinsec") * 1000UL;
     m_cfg.reconnectDelayS  = settings::getInt("irc_recondly");
     m_cfg.reconnectMaxS    = settings::getInt("irc_reconmax");
     m_cfg.kickDelayS       = settings::getInt("irc_kickdly");
     m_cfg.lockDelayS       = settings::getInt("irc_lockdly");
     m_cfg.pingTimeoutS     = settings::getInt("irc_pingout");
-    m_cfg.autoReconnect    = settings::getBool("irc_recon");
     m_cfg.rejoinOnKick     = settings::getBool("irc_rejoin");
     m_cfg.retryFailedJoins = settings::getBool("irc_retryjn");
     m_cfg.showJoinPart     = settings::getBool("irc_joinpart");
-    m_cfg.showModes        = settings::getBool("irc_showmode");
-    m_cfg.showRaw          = settings::getBool("irc_showraw");
-    m_cfg.allowCtcp        = settings::getBool("irc_beepctcp");
+    m_cfg.filterMode       = settings::getBool("irc_filter");
     m_cfg.scrollback       = settings::getInt("irc_scrollbk");
+
+    // Not settings. Mode changes and CTCP replies are part of being an IRC
+    // client, and an IRC client that does not come back after a drop is not
+    // one. Raw server lines stay off: /raw and the system log already cover
+    // anyone who wants to watch the wire.
+    m_cfg.autoReconnect    = true;
+    m_cfg.showModes        = true;
+    m_cfg.allowCtcp        = true;
+    m_cfg.showRaw          = false;
+
+    m_ignores = irc::splitList(settings::getText("irc_ignore"));
 
     for (auto& buffer : m_buffers) buffer->doc.setMaxLines(m_cfg.scrollback);
 
@@ -217,6 +270,7 @@ bool IrcClient::isConnected() const {
 
 void IrcClient::connect() {
     m_wantConnection  = true;
+    m_userQuit        = false;
     m_triedTlsAlready = false;
     m_reconnectDelay  = 0;
     m_reconnectAt     = 0;
@@ -243,33 +297,84 @@ void IrcClient::disconnect(const String& quitMessage, bool stayOffline) {
     }
 
     if (isConnected()) {
-        sendRaw("QUIT :" + (quitMessage.isEmpty() ? String("ACID DROP") : quitMessage));
+        sendRaw("QUIT :" + (quitMessage.isEmpty() ? String(kIrcSignature) : quitMessage));
         m_socket->flush();
         m_socket->stop();
     }
     m_socket.reset();
 
-    if (stayOffline) m_wantConnection = false;
+    if (stayOffline) {
+        m_wantConnection = false;
+        m_userQuit       = true;
+    }
 
     for (auto& buffer : m_buffers) buffer->joined = false;
+
+    // Every caller that asks to stay online is a deliberate reconnect - the
+    // button, /reconnect, /server - so dial straight away on a clean slate.
+    // Leaving the timers alone meant pressing reconnect during a backoff wait
+    // did nothing at all until that wait expired, because m_reconnectAt still
+    // held the old future timestamp, and the delay went on doubling.
+    if (!stayOffline) {
+        m_reconnectDelay  = 0;
+        m_reconnectAt     = millis();
+        m_triedTlsAlready = false;
+    }
+
     setState(stayOffline ? IrcState::Offline : IrcState::Reconnecting);
 }
 
 void IrcClient::startConnect() {
-    const String host = settings::getText("irc_server");
-    int          port = settings::getInt("irc_port");
-    bool         tls  = settings::getBool("irc_tls");
+    // A bouncer is a different address on a different port, but the same
+    // protocol from here on - which is the whole reason ZNC needs no client
+    // of its own.
+    const bool znc = zncMode();
 
-    // Second attempt within this cycle, after TLS failed.
-    if (m_triedTlsAlready && settings::getBool("irc_fallback")) {
+    const String host = znc ? settings::getText("znc_host") : settings::getText("irc_server");
+    int          port = znc ? settings::getInt("znc_port")  : settings::getInt("irc_port");
+    bool         tls  = znc ? settings::getBool("znc_tls")  : settings::getBool("irc_tls");
+
+    // Second attempt within this cycle, after TLS failed. Said loudly: the
+    // session that follows is readable by anyone on the path, and dropping to
+    // it is worth noticing rather than something to slip by in the log.
+    //
+    // Never for a bouncer: 6667 is a convention of public IRC servers, and a
+    // bouncer on a private port has no reason to be listening there.
+    if (!znc && m_triedTlsAlready && settings::getBool("irc_fallback")) {
         tls  = false;
         port = 6667;
-        addStatus("TLS failed, retrying in plaintext on port 6667", LINE_ERROR);
+        addStatus("TLS failed - falling back to port 6667. THIS CONNECTION IS NOT "
+                  "ENCRYPTED: anything sent over it, including a NickServ password, "
+                  "is readable in transit. Turn off Plaintext fallback to stop this "
+                  "happening.", LINE_ERROR);
+        LOG_W(TAG, "falling back to unencrypted plaintext on 6667");
     }
 
+    m_verifying = tls && settings::getBool("irc_tlsverif");
+
+    // Only reached when verification has been switched on deliberately. A
+    // certificate is only valid between two dates, so checking one against a
+    // clock still sitting in 1970 fails every time - and that is the state the
+    // device boots in, before NTP has answered. Waiting beats burning the
+    // backoff on a failure that says nothing about the server.
+    if (m_verifying && !net::clockSynced()) {
+        if (!m_waitingForClock) {
+            m_waitingForClock = true;
+            addStatus("Waiting for the clock before checking the certificate", LINE_LOCAL);
+            LOG_I(TAG, "deferring TLS connect until NTP has set the clock");
+        }
+        m_reconnectAt = millis() + 2000;
+        setState(IrcState::Reconnecting);
+        return;
+    }
+    m_waitingForClock = false;
+
     setState(IrcState::Connecting);
-    addStatus("Connecting to " + host + ":" + String(port) + (tls ? " (TLS)" : ""), LINE_LOCAL);
-    LOG_I(TAG, "connecting to %s:%d tls=%d", host.c_str(), port, tls ? 1 : 0);
+    addStatus("Connecting to " + host + ":" + String(port) +
+              (tls ? (m_verifying ? " (TLS, verified)" : " (TLS, unverified)") : ""),
+              LINE_LOCAL);
+    LOG_I(TAG, "connecting to %s:%d tls=%d verify=%d", host.c_str(), port,
+          tls ? 1 : 0, m_verifying ? 1 : 0);
 
     m_socket.reset();
     m_usingTls = tls;
@@ -279,21 +384,7 @@ void IrcClient::startConnect() {
     job->fallbackAddress = m_lastGoodAddress;
     job->port = static_cast<uint16_t>(port);
     job->tls  = tls;
-
-    // The certificate is read here, on this task: the SD card shares the SPI
-    // bus with the display and must not be touched from another thread.
-    if (tls && settings::getBool("irc_tlsverif") && storage::ensureSdCard()) {
-        File ca = SD.open("/irc-ca.pem", FILE_READ);
-        if (ca && ca.size() > 0) {
-            job->caPem.reserve(ca.size() + 1);
-            while (ca.available()) job->caPem += static_cast<char>(ca.read());
-            addStatus("Using CA certificate from /irc-ca.pem", LINE_LOCAL);
-        } else {
-            addStatus("Certificate verification is on but /irc-ca.pem is missing "
-                      "- connecting without verification", LINE_ERROR);
-        }
-        if (ca) ca.close();
-    }
+    if (m_verifying) job->caPem = net::kIrcCaBundle;
 
     m_job = job;
     m_connectStartedAt = millis();
@@ -373,7 +464,8 @@ void IrcClient::pollConnect() {
             delete socket;
         }
 
-        if (m_usingTls && !m_triedTlsAlready && settings::getBool("irc_fallback")) {
+        if (m_usingTls && !zncMode() && !m_triedTlsAlready &&
+            settings::getBool("irc_fallback")) {
             m_triedTlsAlready = true;
             startConnect();          // immediate plaintext retry
             return;
@@ -414,6 +506,12 @@ void IrcClient::onDisconnected(const char* why) {
 
 void IrcClient::scheduleReconnect() {
     if (!m_wantConnection || !m_cfg.autoReconnect) {
+        // Stop wanting it, not just stop scheduling it. loop() dials again the
+        // moment it sees Offline with a connection still wanted - that is how
+        // it picks up once WiFi associates - so leaving the flag set here
+        // turned "auto-reconnect off" into an unthrottled retry loop with no
+        // backoff at all, which is the opposite of what the setting asks for.
+        m_wantConnection = false;
         setState(IrcState::Offline);
         return;
     }
@@ -545,17 +643,47 @@ void IrcClient::registerConnection() {
 
     sendRaw("CAP LS 302");
 
+    // PASS has to precede NICK and USER.
+    //
+    // ZNC parses it as "[user[@identifier][/network]:]password" - see
+    // CClient::ParsePass in its source - which is how a single connection
+    // picks both the account and which of its networks to attach to.
+    String serverPassword;
+    if (zncMode()) {
+        String user = settings::getText("znc_user");
+
+        const String network = settings::getText("znc_network");
+        if (!user.isEmpty() && !network.isEmpty()) user += "/" + network;
+
+        const String password = settings::getText("znc_pass");
+        serverPassword = user.isEmpty() ? password : user + ":" + password;
+    } else {
+        serverPassword = settings::getText("irc_srvpass");
+    }
+
+    if (!serverPassword.isEmpty()) sendRaw("PASS " + serverPassword);
+
     m_nick = settings::getText("irc_nick");
-    const String user = settings::getText("irc_user");
-    const String real = settings::getText("irc_real");
 
     sendRaw("NICK " + m_nick);
-    sendRaw("USER " + user + " 0 * :" + real);
+    sendRaw("USER " + String(kUserName) + " 0 * :" + kIrcSignature);
 }
 
 void IrcClient::sendCapRequest() {
-    // Only the capabilities we actually act on.
-    String wanted = "multi-prefix server-time";
+    // Only capabilities this client actually handles. Asking for one it does
+    // not understand is worse than not asking: the server starts sending a
+    // command nothing consumes, and every line of it lands in the status
+    // window as unparsed noise.
+    //
+    // Deliberately not requested:
+    //   echo-message      - the server would echo our own PRIVMSG back, and
+    //                       say() already prints it locally, so every message
+    //                       would appear twice
+    //   userhost-in-names - NAMES would return nick!user@host and the roster
+    //                       would store the whole mask as the nick
+    //   batch, labeled-response - need real handling, not just a consumer
+    String wanted = "multi-prefix server-time away-notify account-notify "
+                    "chghost extended-join invite-notify message-tags";
     if (settings::getBool("irc_sasl") && !settings::getText("irc_saslpass").isEmpty()) {
         wanted += " sasl";
         m_saslRequested = true;
@@ -613,6 +741,24 @@ void IrcClient::dispatch(const IrcMessage& message) {
     if (command == "MODE")         { handleMode(message);           return; }
     if (command == "TOPIC")        { handleTopic(message);          return; }
     if (command == "PONG")         { return; }
+
+    // --- capabilities we asked for, and therefore have to consume ---------
+    //
+    // away-notify, account-notify and chghost exist to keep a client's user
+    // list accurate. This one shows a roster rather than tracking away state
+    // or hostmasks, so there is nothing to update - but they still have to be
+    // swallowed here, or every one of them prints as an unknown command.
+    if (command == "AWAY" || command == "ACCOUNT" || command == "CHGHOST") return;
+
+    if (command == "INVITE") {
+        // param(0) is the invitee, param(1) the channel.
+        addStatus(message.nick + " invited " +
+                  (irc::equalsIgnoreCaseIrc(message.param(0), m_nick)
+                       ? String("you")
+                       : message.param(0)) +
+                  " to " + message.param(1), LINE_NOTICE);
+        return;
+    }
 
     if (command == "ERROR") {
         addStatus(message.param(0), LINE_ERROR);
@@ -696,14 +842,14 @@ void IrcClient::handleNumeric(const IrcMessage& message) {
 
         case 433:   // ERR_NICKNAMEINUSE
         case 436: { // ERR_NICKCOLLISION
+            // Four random digits on the nick you configured, re-rolled on
+            // every collision. Always from the configured nick rather than
+            // from m_nick, so repeated collisions do not stack suffix onto
+            // suffix until the server rejects the length.
             m_nickAttempt++;
-            String next;
-            if (m_nickAttempt == 1) {
-                next = settings::getText("irc_altnick");
-                if (next.isEmpty()) next = m_nick + "_";
-            } else {
-                next = settings::getText("irc_nick") + String(random(10, 99));
-            }
+            const String base = settings::getText("irc_nick");
+            const String next = base + String(random(1000, 10000));
+
             addStatus("Nick in use, trying " + next, LINE_ERROR);
             m_nick = next;
             sendRaw("NICK " + next);
@@ -746,7 +892,10 @@ void IrcClient::handleNumeric(const IrcMessage& message) {
             if (found == nullptr) return;
             IrcBuffer& channel = *found;
             channel.topic = message.param(2);
-            addLine(channel, ctrlColor(10) + "*" + RESET + " Topic: " + channel.topic, LINE_TOPIC);
+            if (!infoQuiet(channel) && !m_cfg.filterMode) {
+                addLine(channel, ctrlColor(10) + "*" + RESET + " Topic: " + channel.topic,
+                        LINE_TOPIC);
+            }
             return;
         }
 
@@ -764,8 +913,18 @@ void IrcClient::handleNumeric(const IrcMessage& message) {
             }
 
             for (String name : irc::splitList(message.param(3), ' ')) {
-                while (!name.isEmpty() && strchr("@+%~&!", name[0])) name = name.substring(1);
-                if (!name.isEmpty()) channel.nicks.push_back(name);
+                if (name.isEmpty()) continue;
+
+                // Keep the highest prefix rather than discarding all of them.
+                // With multi-prefix a name arrives as "@+nick"; the first
+                // character is the strongest, which is the one that orders it.
+                IrcNick entry;
+                if (strchr("~&@%+!", name[0]) != nullptr) entry.prefix = name[0];
+                while (!name.isEmpty() && strchr("~&@%+!", name[0])) name = name.substring(1);
+
+                if (name.isEmpty()) continue;
+                entry.name = name;
+                channel.nicks.push_back(entry);
             }
             return;
         }
@@ -775,8 +934,10 @@ void IrcClient::handleNumeric(const IrcMessage& message) {
             if (found == nullptr) return;
             IrcBuffer& channel = *found;
             channel.namesLoading = false;
-            addLine(channel, ctrlColor(14) + "* " + String(channel.nicks.size()) +
-                             " users" + RESET, LINE_SERVER);
+            if (!infoQuiet(channel)) {
+                addLine(channel, ctrlColor(14) + "* " + String(channel.nicks.size()) +
+                                 " users" + RESET, LINE_SERVER);
+            }
             return;
         }
 
@@ -786,19 +947,45 @@ void IrcClient::handleNumeric(const IrcMessage& message) {
 
     if (isJoinFailure(code)) {
         const String channelName = message.param(1);
-        IrcBuffer& channel = ensureBuffer(channelName, BufferKind::Channel);
-        channel.joined = false;
-        scheduleJoinRetry(channel, joinFailureReason(code));
+
+        // findBuffer, not ensureBuffer, for the same reason as the numerics
+        // above: a refusal for a channel we never asked to be in would
+        // otherwise conjure a window *and* arm a retry timer on it, so a
+        // channel the server pushed us into and we parted would be dialled
+        // again every few seconds for the rest of the session.
+        IrcBuffer* found = findBuffer(channelName);
+        if (found == nullptr) {
+            addStatus("Cannot join " + channelName + " (" +
+                      joinFailureReason(code) + ")", LINE_ERROR);
+            return;
+        }
+
+        found->joined = false;
+        scheduleJoinRetry(*found, joinFailureReason(code));
         return;
     }
 
-    // Everything else: show the human-readable trailing parameter.
-    const String text = message.params.empty() ? String()
-                                               : message.params[message.params.size() - 1];
+    // Everything else: every parameter after the first, which is always our
+    // own nick. Showing only the trailing one threw away the part that
+    // carries the meaning on any numeric that answers a query - RPL_LIST
+    // printed a topic with no channel name, and a WHOIS printed "seconds
+    // idle" with no number, a real name with no nick, and so on.
+    String text;
+    if (message.params.size() > 2) {
+        for (size_t i = 1; i < message.params.size(); i++) {
+            if (i > 1) text += ' ';
+            text += message.params[i];
+        }
+    } else if (!message.params.empty()) {
+        text = message.params[message.params.size() - 1];
+    }
 
     if (isChannelNumeric(code) && message.params.size() >= 2 && irc::isChannel(message.param(1))) {
         if (IrcBuffer* channel = findBuffer(message.param(1))) {
-            addLine(*channel, text, LINE_SERVER);
+            // Silent while the info panel is collecting: these are the "topic
+            // set by X at Y" and "created at Z" lines, which is most of what
+            // used to bleed into the backlog after closing the panel.
+            if (!infoQuiet(*channel)) addLine(*channel, text, LINE_SERVER);
         } else if (!m_cfg.showRaw) {
             addStatus(text, LINE_SERVER);   // no window for it, and none wanted
         }
@@ -811,6 +998,10 @@ void IrcClient::handleNumeric(const IrcMessage& message) {
 // --- messages -------------------------------------------------------------
 
 void IrcClient::handlePrivmsg(const IrcMessage& message, bool isNotice) {
+    // Before anything else, so an ignored sender cannot open a query window,
+    // ring the mention alert or land a line in the scrollback.
+    if (isIgnored(message)) return;
+
     const String target = message.param(0);
     String       text   = message.param(1);
     const String from   = message.nick;
@@ -820,7 +1011,7 @@ void IrcClient::handlePrivmsg(const IrcMessage& message, bool isNotice) {
     if (text.length() >= 2 && text[0] == '\001') {
         String payload = text.substring(1);
         if (payload.endsWith("\001")) payload = payload.substring(0, payload.length() - 1);
-        handleCtcp(message, target, payload);
+        handleCtcp(message, target, payload, isNotice);
         return;
     }
 
@@ -837,7 +1028,12 @@ void IrcClient::handlePrivmsg(const IrcMessage& message, bool isNotice) {
 
     IrcBuffer* target_buffer;
     if (!toMe) {
-        target_buffer = &ensureBuffer(target, BufferKind::Channel);
+        // Never create the window here. Anything we meant to be in already has
+        // one before its JOIN goes out, so a channel message with no window is
+        // either still in flight for a channel we just parted or addressed to
+        // a mask like $$*, and both used to leave a stray buffer behind.
+        target_buffer = findBuffer(target);
+        if (target_buffer == nullptr) target_buffer = &status();
     } else if (isNotice || fromServer || fromService) {
         target_buffer = &status();
     } else {
@@ -864,7 +1060,8 @@ void IrcClient::handlePrivmsg(const IrcMessage& message, bool isNotice) {
     if (onBufferChanged) onBufferChanged(where);
 }
 
-void IrcClient::handleCtcp(const IrcMessage& message, const String& target, String payload) {
+void IrcClient::handleCtcp(const IrcMessage& message, const String& target, String payload,
+                           bool isNotice) {
     const String from  = message.nick;
     const uint32_t stamp = lineStamp(message);
 
@@ -875,8 +1072,10 @@ void IrcClient::handleCtcp(const IrcMessage& message, const String& target, Stri
 
     if (verb == "ACTION") {
         const bool toMe = irc::equalsIgnoreCaseIrc(target, m_nick);
-        IrcBuffer& where = toMe ? ensureBuffer(from, BufferKind::Query)
-                                : ensureBuffer(target, BufferKind::Channel);
+        IrcBuffer* found = toMe ? &ensureBuffer(from, BufferKind::Query)
+                                : findBuffer(target);   // never conjure a channel
+        if (found == nullptr) found = &status();
+        IrcBuffer& where = *found;
         const bool mention = isHighlight(rest);
 
         where.doc.append(ctrlColor(13) + "*" + RESET + " " + from + " " + rest,
@@ -887,6 +1086,15 @@ void IrcClient::handleCtcp(const IrcMessage& message, const String& target, Stri
             if (onHighlight) onHighlight(from, rest, where);
         }
         if (onBufferChanged) onBufferChanged(where);
+        return;
+    }
+
+    // A CTCP carried in a NOTICE is a *reply* to something we asked, never a
+    // request. Answering it is how two clients end up bouncing VERSION off
+    // each other forever, so it is only ever displayed.
+    if (isNotice) {
+        addStatus("CTCP " + verb + " reply from " + from +
+                  (rest.isEmpty() ? String() : ": " + rest), LINE_SERVER);
         return;
     }
 
@@ -918,7 +1126,11 @@ void IrcClient::handleJoin(const IrcMessage& message) {
 
     // Check before creating anything: a channel the server pushed us into
     // should leave no window behind at all, and ensureBuffer() would make one.
-    if (irc::equalsIgnoreCaseIrc(message.nick, m_nick)) {
+    //
+    // Never through a bouncer. Attaching to ZNC replays a JOIN for every
+    // channel the bouncer is already sitting in, which is the whole point of
+    // it - treating those as unrequested would part you out of all of them.
+    if (!zncMode() && irc::equalsIgnoreCaseIrc(message.nick, m_nick)) {
         IrcBuffer* known = findBuffer(channelName);
         if (known == nullptr || !known->requested) {
             LOG_I(TAG, "server put us in %s unasked, parting", channelName.c_str());
@@ -941,6 +1153,8 @@ void IrcClient::handleJoin(const IrcMessage& message) {
     IrcBuffer& channel = ensureBuffer(channelName, BufferKind::Channel);
 
     if (irc::equalsIgnoreCaseIrc(message.nick, m_nick)) {
+        // A bouncer decides what we are in, so its joins are authoritative.
+        if (zncMode()) channel.requested = true;
 
         channel.joined      = true;
         channel.retryAt     = 0;
@@ -953,8 +1167,8 @@ void IrcClient::handleJoin(const IrcMessage& message) {
         return;
     }
 
-    channel.nicks.push_back(message.nick);
-    if (!m_cfg.showJoinPart) return;
+    channel.nicks.push_back(IrcNick{message.nick, 0});
+    if (!m_cfg.showJoinPart || m_cfg.filterMode) return;
 
     addLine(channel,
             ctrlColor(9) + "->" + RESET + " " + formatNick(message.nick) +
@@ -980,13 +1194,13 @@ void IrcClient::handlePart(const IrcMessage& message) {
     }
 
     for (size_t i = 0; i < channel->nicks.size(); i++) {
-        if (irc::equalsIgnoreCaseIrc(channel->nicks[i], message.nick)) {
+        if (irc::equalsIgnoreCaseIrc(channel->nicks[i].name, message.nick)) {
             channel->nicks.erase(channel->nicks.begin() + i);
             break;
         }
     }
 
-    if (!m_cfg.showJoinPart) return;
+    if (!m_cfg.showJoinPart || m_cfg.filterMode) return;
     addLine(*channel,
             ctrlColor(4) + "<-" + RESET + " " + formatNick(message.nick) + " left " +
             ctrlColor(10) + channelName + RESET +
@@ -999,7 +1213,12 @@ void IrcClient::handleKick(const IrcMessage& message) {
     const String victim      = message.param(1);
     const String reason      = message.param(2);
 
-    IrcBuffer& channel = ensureBuffer(channelName, BufferKind::Channel);
+    // findBuffer: a kick out of a channel we never asked to be in - one the
+    // server forced us into and we parted - must not rebuild the window and
+    // then arm a rejoin timer on it.
+    IrcBuffer* found = findBuffer(channelName);
+    if (found == nullptr) return;
+    IrcBuffer& channel = *found;
 
     if (irc::equalsIgnoreCaseIrc(victim, m_nick)) {
         channel.joined = false;
@@ -1021,11 +1240,15 @@ void IrcClient::handleKick(const IrcMessage& message) {
     }
 
     for (size_t i = 0; i < channel.nicks.size(); i++) {
-        if (irc::equalsIgnoreCaseIrc(channel.nicks[i], victim)) {
+        if (irc::equalsIgnoreCaseIrc(channel.nicks[i].name, victim)) {
             channel.nicks.erase(channel.nicks.begin() + i);
             break;
         }
     }
+
+    // Someone else being kicked is channel noise; you being kicked never is,
+    // and that case returned above.
+    if (m_cfg.filterMode) return;
 
     addLine(channel,
             ctrlColor(4) + "!!" + RESET + " " + formatNick(victim) + " was kicked by " +
@@ -1038,14 +1261,14 @@ void IrcClient::handleQuit(const IrcMessage& message) {
 }
 
 void IrcClient::removeNickEverywhere(const String& nick, const String& reason, uint32_t stamp) {
-    const bool show = m_cfg.showJoinPart;
+    const bool show = m_cfg.showJoinPart && !m_cfg.filterMode;
 
     for (auto& buffer : m_buffers) {
         if (!buffer->isChannel()) continue;
 
         bool present = false;
         for (size_t i = 0; i < buffer->nicks.size(); i++) {
-            if (irc::equalsIgnoreCaseIrc(buffer->nicks[i], nick)) {
+            if (irc::equalsIgnoreCaseIrc(buffer->nicks[i].name, nick)) {
                 buffer->nicks.erase(buffer->nicks.begin() + i);
                 present = true;
                 break;
@@ -1072,8 +1295,13 @@ void IrcClient::handleNickChange(const IrcMessage& message) {
 
     for (auto& buffer : m_buffers) {
         bool present = false;
-        for (String& name : buffer->nicks) {
-            if (irc::equalsIgnoreCaseIrc(name, from)) { name = to; present = true; break; }
+        for (IrcNick& entry : buffer->nicks) {
+            // The prefix follows the person, not the name they had.
+            if (irc::equalsIgnoreCaseIrc(entry.name, from)) {
+                entry.name = to;
+                present = true;
+                break;
+            }
         }
         // A query window follows the nick it is talking to.
         if (buffer->kind == BufferKind::Query && irc::equalsIgnoreCaseIrc(buffer->name, from)) {
@@ -1083,6 +1311,10 @@ void IrcClient::handleNickChange(const IrcMessage& message) {
         }
         if (!present) continue;
 
+        // Your own rename is always shown - it changes who you are in the
+        // window, and it is the one nick change that is never noise.
+        if (m_cfg.filterMode && !irc::equalsIgnoreCaseIrc(to, m_nick)) continue;
+
         buffer->doc.append(ctrlColor(6) + "*" + RESET + " " + from + " is now known as " +
                            formatNick(to), stamp, LINE_NICK, false);
         if (onBufferChanged) onBufferChanged(*buffer);
@@ -1090,9 +1322,11 @@ void IrcClient::handleNickChange(const IrcMessage& message) {
 }
 
 void IrcClient::handleMode(const IrcMessage& message) {
-    if (!m_cfg.showModes) return;
-
     const String target = message.param(0);
+
+    // Filter mode hides the line but must not skip the NAMES refresh below:
+    // the nick list still has to be right even when the change is not shown.
+    const bool announce = m_cfg.showModes && !m_cfg.filterMode;
     String modes;
     for (size_t i = 1; i < message.params.size(); i++) {
         if (i > 1) modes += ' ';
@@ -1103,11 +1337,25 @@ void IrcClient::handleMode(const IrcMessage& message) {
                         (message.nick.isEmpty() ? target : message.nick) +
                         " sets mode " + modes;
 
-    if (irc::isChannel(target)) {
-        if (IrcBuffer* channel = findBuffer(target)) addLine(*channel, text, LINE_MODE);
-        else                                        addStatus(text, LINE_MODE);
-    } else {
-        addStatus(text, LINE_MODE);
+    if (announce) {
+        if (irc::isChannel(target)) {
+            if (IrcBuffer* channel = findBuffer(target)) addLine(*channel, text, LINE_MODE);
+            else                                        addStatus(text, LINE_MODE);
+        } else {
+            addStatus(text, LINE_MODE);
+        }
+    }
+
+    // Status modes reorder the nick list. Rather than replaying the mode
+    // string against it - which means tracking which modes take a parameter on
+    // this particular server - ask for NAMES again and take the answer.
+    // Only the flag word, not the parameters after it: searching the whole
+    // string would fire on a channel key that happened to contain an "o".
+    const String flags = message.param(1);
+    if (irc::isChannel(target) && message.params.size() > 2) {
+        for (const char flag : {'o', 'h', 'v', 'a', 'q'}) {
+            if (flags.indexOf(flag) >= 0) { sendRaw("NAMES " + target); break; }
+        }
     }
 }
 
@@ -1119,6 +1367,10 @@ void IrcClient::handleTopic(const IrcMessage& message) {
     if (found == nullptr) return;
     IrcBuffer& channel = *found;
     channel.topic = topic;
+
+    // Your own topic change is something you did, so it is always shown.
+    if (m_cfg.filterMode && !irc::equalsIgnoreCaseIrc(message.nick, m_nick)) return;
+
     addLine(channel,
             ctrlColor(10) + "*" + RESET + " " + formatNick(message.nick) +
             " changed the topic: " + topic,
@@ -1128,6 +1380,15 @@ void IrcClient::handleTopic(const IrcMessage& message) {
 // --- joining --------------------------------------------------------------
 
 void IrcClient::queueConfiguredChannels() {
+    // A bouncer already knows which channels you are in and rejoins them for
+    // you. Sending our own list on top would re-join channels you had removed
+    // from it, and fight it over the ones you had not.
+    if (zncMode()) {
+        LOG_I(TAG, "bouncer mode: leaving channel membership to ZNC");
+        if (onBufferListChanged) onBufferListChanged();
+        return;
+    }
+
     for (const IrcChannelConfig& saved : channels::all()) {
         if (!saved.autojoin) continue;
 
@@ -1275,6 +1536,20 @@ void IrcClient::notice(const String& target, const String& text) {
     addLine(where, ctrlColor(13) + "-> -" + target + "-" + RESET + " " + text, LINE_NOTICE);
 }
 
+void IrcClient::requestChannelInfo(const String& channel) {
+    IrcBuffer* buffer = findBuffer(channel);
+    if (buffer == nullptr || !buffer->joined) return;
+
+    // Five seconds is longer than any of these take to come back, and the
+    // window closing does not end it - a slow server would otherwise deliver
+    // the tail of the answer into the backlog after the panel had gone.
+    buffer->infoQuietUntil = millis() + 5000;
+
+    sendRaw("MODE " + channel);
+    sendRaw("TOPIC " + channel);
+    sendRaw("NAMES " + channel);
+}
+
 void IrcClient::join(const String& channel, const String& key) {
     IrcBuffer& buffer = ensureBuffer(channel, BufferKind::Channel);
     buffer.key        = key;
@@ -1302,7 +1577,7 @@ void IrcClient::part(const String& channel, const String& reason) {
     // turning autojoin off here meant a channel silently stopped being joined
     // on every future boot, with nothing on screen to say why. Autojoin is
     // changed in the channel editor, where it is visible.
-    sendRaw("PART " + channel + (reason.isEmpty() ? String() : " :" + reason));
+    sendRaw("PART " + channel + " :" + (reason.isEmpty() ? String(kIrcSignature) : reason));
 }
 
 void IrcClient::setNick(const String& nick) {
@@ -1400,6 +1675,25 @@ uint32_t IrcClient::lineStamp(const IrcMessage& message) const {
     return static_cast<uint32_t>(time(nullptr));
 }
 
+bool IrcClient::isIgnored(const IrcMessage& message) const {
+    if (m_ignores.empty() || message.nick.isEmpty()) return false;
+
+    // Never ignore ourselves, whatever the list says: losing your own echoed
+    // messages would look exactly like the client being broken.
+    if (irc::equalsIgnoreCaseIrc(message.nick, m_nick)) return false;
+
+    const String full = message.nick + "!" + message.user + "@" + message.host;
+
+    for (const String& entry : m_ignores) {
+        if (entry.isEmpty()) continue;
+        // A bare nick matches the nick; anything with a ! or @ in it is a
+        // full mask and is matched against nick!user@host.
+        const bool isMask = entry.indexOf('!') >= 0 || entry.indexOf('@') >= 0;
+        if (globMatch(entry.c_str(), (isMask ? full : message.nick).c_str())) return true;
+    }
+    return false;
+}
+
 bool IrcClient::isHighlight(const String& text) const {
     const String plain = textfmt::strip(text);
 
@@ -1431,39 +1725,14 @@ bool IrcClient::isHighlight(const String& text) const {
     return false;
 }
 
+uint8_t IrcClient::nickColorIndex(const String& nick) const {
+    // Shared with the relay, so the same person is the same colour whichever
+    // way this device is connected.
+    return textfmt::nickColorIndex(nick);
+}
+
 String IrcClient::colorForNick(const String& nick) const {
-    // Skip white, black and the two greys so nicks stay readable on black.
-    static const uint8_t kPalette[] = {2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13};
-    const uint8_t count = sizeof(kPalette) / sizeof(kPalette[0]);
-
-    switch (settings::getEnum("irc_nickcol")) {
-        case 0:
-            return String();
-        case 2: {
-            // Rolled once per nick and remembered: re-rolling per line made a
-            // nick change colour on every message it sent.
-            static std::map<String, uint8_t> assigned;
-
-            // One entry per nick ever seen would grow without bound on a busy
-            // network; the assignment is arbitrary anyway, so start over.
-            if (assigned.size() > 256) assigned.clear();
-
-            auto it = assigned.find(nick);
-            if (it == assigned.end()) {
-                it = assigned.emplace(nick, kPalette[random(count)]).first;
-            }
-            return ctrlColor(it->second);
-        }
-        default: {
-            // FNV-1a keeps a nick the same colour across sessions and devices.
-            uint32_t hash = 2166136261u;
-            for (unsigned int i = 0; i < nick.length(); i++) {
-                hash ^= static_cast<uint8_t>(tolower(nick[i]));
-                hash *= 16777619u;
-            }
-            return ctrlColor(kPalette[hash % count]);
-        }
-    }
+    return ctrlColor(nickColorIndex(nick));
 }
 
 String IrcClient::formatNick(const String& nick) const {

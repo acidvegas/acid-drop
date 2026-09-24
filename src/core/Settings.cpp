@@ -1,10 +1,7 @@
 #include "core/Settings.h"
 
-#include <ArduinoJson.h>
 #include <Preferences.h>
-#include <SD.h>
 
-#include "core/Storage.h"
 #include <esp_mac.h>
 #include <nvs_flash.h>
 
@@ -12,6 +9,7 @@
 #include <cstring>
 
 #include "core/Log.h"
+#include "ui/Theme.h"
 
 namespace settings {
 namespace {
@@ -20,52 +18,122 @@ constexpr const char* kNamespace = "aciddrop";
 constexpr const char* TAG        = "settings";
 
 // --- enum option tables ---------------------------------------------------
-const char* const kOptOnOffAuto[]   = {"Off", "On", "Auto", nullptr};
-const char* const kOptBootApp[]     = {"Launcher", "IRC", "Last used", nullptr};
-const char* const kOptRotation[]    = {"Normal", "Upside down", nullptr};
-const char* const kOptTermFont[]    = {"Small (6x14)", "Large (9x20)", nullptr};
-const char* const kOptTimestamp[]   = {"None", "HH:MM", "HH:MM:SS", nullptr};
 const char* const kOptCpuMhz[]      = {"80 MHz", "160 MHz", "240 MHz", nullptr};
 const char* const kOptLogLevel[]    = {"Error", "Warn", "Info", "Debug", nullptr};
-const char* const kOptLoraBw[]      = {"125 kHz", "250 kHz", "500 kHz", nullptr};
-const char* const kOptNickColor[]   = {"Off", "Hashed", "Random", nullptr};
 const char* const kOptClock[]       = {"12 hour", "24 hour", nullptr};
+// What this device connects to. Exactly one, because all three want the same
+// nick and the same attention.
+const char* const kOptChatMode[]    = {"Direct IRC", "ZNC bouncer", "WeeChat relay", nullptr};
 
 // --- the registry ---------------------------------------------------------
 // Columns: key, section, label, help, type, min, max, step, scale, unit,
-//          options, defNum, defText, secret, needsRestart
+//          options, defNum, defText, secret, needsRestart, hidden
 //
 // These are spelled DEF_* rather than the obvious single letters because F()
 // and friends are already Arduino macros, and #undef-ing them here would take
 // Arduino's versions away from the rest of the translation unit.
-#define DEF_BOOL(k, sec, lbl, help, def)                    {k, sec, lbl, help, SettingType::Bool,  0, 1, 1, 1, nullptr, nullptr, def, nullptr, false, false}
-#define DEF_INT(k, sec, lbl, help, lo, hi, st, unit, def)  {k, sec, lbl, help, SettingType::Int,   lo, hi, st, 1, unit, nullptr, def, nullptr, false, false}
-#define DEF_FLOAT(k, sec, lbl, help, lo, hi, st, sc, unit, def) {k, sec, lbl, help, SettingType::Float, lo, hi, st, sc, unit, nullptr, def, nullptr, false, false}
-#define DEF_TEXT(k, sec, lbl, help, def)                    {k, sec, lbl, help, SettingType::Text,  0, 0, 0, 1, nullptr, nullptr, 0, def, false, false}
-#define DEF_SECRET(k, sec, lbl, help, def)                    {k, sec, lbl, help, SettingType::Text,  0, 0, 0, 1, nullptr, nullptr, 0, def, true,  false}
-#define DEF_ENUM(k, sec, lbl, help, opts, def)              {k, sec, lbl, help, SettingType::Enum,  0, 0, 1, 1, nullptr, opts,    def, nullptr, false, false}
+//
+// IRC comes first: this is IRC firmware, and the settings screen follows this
+// order. Things that are not worth a choice are not here at all - the render
+// options, the quit and part text, the username and the real name are fixed in
+// IrcClient.cpp, because nobody turns colours off in an IRC client.
+#define DEF_BOOL(k, sec, lbl, help, def)                    {k, sec, lbl, help, SettingType::Bool,  0, 1, 1, 1, nullptr, nullptr, def, nullptr, false, false, false}
+#define DEF_HIDDEN(k, sec, def)                             {k, sec, k,   nullptr, SettingType::Bool, 0, 1, 1, 1, nullptr, nullptr, def, nullptr, false, false, true}
+#define DEF_INT(k, sec, lbl, help, lo, hi, st, unit, def)  {k, sec, lbl, help, SettingType::Int,   lo, hi, st, 1, unit, nullptr, def, nullptr, false, false, false}
+#define DEF_FLOAT(k, sec, lbl, help, lo, hi, st, sc, unit, def) {k, sec, lbl, help, SettingType::Float, lo, hi, st, sc, unit, nullptr, def, nullptr, false, false, false}
+#define DEF_TEXT(k, sec, lbl, help, def)                    {k, sec, lbl, help, SettingType::Text,  0, 0, 0, 1, nullptr, nullptr, 0, def, false, false, false}
+#define DEF_SECRET(k, sec, lbl, help, def)                  {k, sec, lbl, help, SettingType::Text,  0, 0, 0, 1, nullptr, nullptr, 0, def, true,  false, false}
+#define DEF_ENUM(k, sec, lbl, help, opts, def)              {k, sec, lbl, help, SettingType::Enum,  0, 0, 1, 1, nullptr, opts,    def, nullptr, false, false, false}
+#define DEF_COLOR(k, sec, lbl, def)                         {k, sec, lbl, nullptr, SettingType::Color, 0, 0xFFFFFF, 1, 1, nullptr, nullptr, def, nullptr, false, false, false}
 
 const std::vector<SettingDef> kDefs = {
+    // --- IRC server ------------------------------------------------------
+    DEF_ENUM("chat_mode",   "Server", "Mode",             "Direct IRC talks to a server itself. ZNC and WeeChat are things that are already connected, and this becomes a window onto them.", kOptChatMode, 0),
+    DEF_TEXT("irc_server",  "Server", "Server",           nullptr, "irc.supernets.org"),
+    DEF_INT("irc_port",    "Server", "Port",             nullptr, 1, 65535, 1, nullptr, 6697),
+    DEF_BOOL("irc_tls",     "Server", "TLS",              nullptr, 1),
+    DEF_BOOL("irc_tlsverif","Server", "Verify certificate", "Off by default. TLS still encrypts either way; this additionally checks the server's certificate against the roots built into the firmware, which protects your NickServ and SASL passwords from an intercepted connection.", 0),
+    DEF_BOOL("irc_fallback","Server", "Plaintext fallback", "Retry on port 6667 if TLS fails", 1),
+    DEF_SECRET("irc_srvpass","Server", "Server password",  "Sent as PASS before registering. For a ZNC bouncer this is user:password, or user/network:password.", ""),
+
+    // --- ZNC ---------------------------------------------------------------
+    // A bouncer speaks plain IRC, so this reuses the whole IRC client. The
+    // only thing that makes it ZNC is the PASS line, which is where the user,
+    // the network and the password all go.
+    DEF_TEXT("znc_host",    "ZNC", "Bouncer host",      nullptr, ""),
+    DEF_INT("znc_port",    "ZNC", "Bouncer port",      nullptr, 1, 65535, 1, nullptr, 6697),
+    DEF_BOOL("znc_tls",     "ZNC", "TLS",               nullptr, 1),
+    DEF_TEXT("znc_user",    "ZNC", "ZNC username",      nullptr, ""),
+    DEF_SECRET("znc_pass",  "ZNC", "ZNC password",      nullptr, ""),
+    DEF_TEXT("znc_network", "ZNC", "Network",           "Which of your ZNC networks to attach to. Leave empty for the default.", ""),
+
+    // --- Relay -----------------------------------------------------------
+    // A WeeChat relay is a different thing to connect to, not a different way
+    // of connecting to IRC: WeeChat holds the networks and this becomes a
+    // window onto it.
+    DEF_TEXT("relay_host",  "Relay", "Relay host",       nullptr, ""),
+    DEF_INT("relay_port",  "Relay", "Relay port",       nullptr, 1, 65535, 1, nullptr, 9000),
+    DEF_SECRET("relay_pass","Relay", "Relay password",   nullptr, ""),
+    DEF_BOOL("relay_tls",   "Relay", "TLS",              "Relay certificates are usually self-signed, so this is not verified", 0),
+    DEF_INT("relay_backlog","Relay", "Backlog",          "Lines fetched when a buffer is first opened", 10, 200, 10, "lines", 50),
+
+    // --- Identity --------------------------------------------------------
+    DEF_TEXT("irc_nick",    "Identity", "Nick",           "Four random digits are appended if it is already taken", ""),
+
+    // --- Authentication --------------------------------------------------
+    DEF_BOOL("irc_sasl",    "Authentication", "SASL PLAIN",      "Authenticate during connection registration", 0),
+    DEF_TEXT("irc_saslusr", "Authentication", "SASL account",    "Defaults to your nick when empty", ""),
+    DEF_SECRET("irc_saslpass","Authentication", "SASL password",   nullptr, ""),
+    DEF_SECRET("irc_nspass",  "Authentication", "NickServ password", "Sent as IDENTIFY after connecting, if SASL is off", ""),
+
+    // --- Connection ------------------------------------------------------
+    DEF_INT("irc_joinsec", "Connection", "Join delay",     "Wait this long after the welcome (001) before joining", 0, 60, 1, "s", 6),
+    DEF_INT("irc_recondly","Connection", "Reconnect delay","First retry waits this long, then backs off", 1, 300, 1, "s", 5),
+    DEF_INT("irc_reconmax","Connection", "Max backoff",    "Reconnect delay never exceeds this", 5, 900, 5, "s", 120),
+    DEF_BOOL("irc_rejoin",  "Connection", "Rejoin on kick", nullptr, 1),
+    DEF_INT("irc_kickdly", "Connection", "Kick rejoin delay", nullptr, 1, 300, 1, "s", 3),
+    DEF_BOOL("irc_retryjn", "Connection", "Retry failed joins", "Keep trying when a channel is +i, +k, +b or full", 1),
+    DEF_INT("irc_lockdly", "Connection", "Join retry delay", nullptr, 1, 300, 1, "s", 5),
+    DEF_INT("irc_pingout", "Connection", "Ping timeout",   "Drop the link if the server is silent this long", 30, 900, 10, "s", 260),
+
+    // --- Chat ------------------------------------------------------------
+    DEF_BOOL("irc_ts",      "Chat", "Timestamps",        "Show HH:MM against every line", 1),
+    DEF_BOOL("irc_joinpart","Chat", "Show joins/parts",  "Hide the join, part and quit noise on a busy channel", 1),
+    DEF_BOOL("irc_filter",  "Chat", "Filter mode",       "Show only what people say. Hides joins, parts, quits, modes, topics and other people's kicks - anything that happens to you is still shown.", 0),
+    DEF_INT("irc_scrollbk","Chat", "Scrollback",        "Lines kept per window. This lives in internal RAM, so large values across several windows cost real memory.", 100, 3000, 100, "lines", 400),
+    DEF_TEXT("irc_hilight", "Chat", "Highlight words",   "Comma separated, in addition to your nick", ""),
+    DEF_TEXT("irc_ignore",  "Chat", "Ignore list",       "Comma separated nicks whose messages are dropped. Wildcards allowed, e.g. bot* or *!*@spam.host", ""),
+    // Toggled by the button in the input row, not by a settings row.
+    DEF_HIDDEN("irc_topbar", "Chat", 1),
+
+    // --- Theme -----------------------------------------------------------
+    // Five colours; everything else on screen is derived from them, so the
+    // menu stays short and a custom theme cannot come out incoherent.
+    DEF_COLOR("th_accent",  "Theme", "Accent",          theme::kDefaultAccent),
+    DEF_COLOR("th_bg",      "Theme", "Background",      theme::kDefaultBackground),
+    DEF_COLOR("th_text",    "Theme", "Text",            theme::kDefaultText),
+    DEF_COLOR("th_panel",   "Theme", "Status bar",      theme::kDefaultPanel),
+    DEF_COLOR("th_input",   "Theme", "Message box",     theme::kDefaultInput),
+
     // --- Device ----------------------------------------------------------
-    DEF_TEXT("dev_name",    "Device",  "Device name",      "Shown on the lock screen and used as the WiFi hostname", "acid-drop"),
+    DEF_TEXT("dev_name",    "Device",  "Device name",      "Used as the WiFi hostname", "acid-drop"),
     DEF_ENUM("clock_fmt",   "Device",  "Clock format",     nullptr, kOptClock, 0),
     DEF_INT("tz_offset",   "Device",  "UTC offset",       "Minutes ahead of UTC. -300 is US Eastern.", -720, 840, 15, "min", -300),
     DEF_BOOL("dst",         "Device",  "Daylight saving",  "Adds one hour while in effect", 1),
     DEF_BOOL("ntp_enable",  "Device",  "Sync clock (NTP)", "Requires WiFi", 1),
     DEF_TEXT("ntp_server",  "Device",  "NTP server",       nullptr, "pool.ntp.org"),
     DEF_INT("splash_ms",   "Device",  "Splash time",      "How long the boot logo stays up", 0, 5000, 250, "ms", 1500),
-    DEF_ENUM("boot_app",    "Device",  "Start in",         "Which screen to show after boot", kOptBootApp, 0),
 
     // --- Display ---------------------------------------------------------
     DEF_INT("brightness",  "Display", "Brightness",       nullptr, 5, 255, 5, nullptr, 200),
     DEF_INT("dim_secs",    "Display", "Dim after",        "Seconds of inactivity before dimming. 0 disables.", 0, 600, 5, "s", 20),
     DEF_INT("off_secs",    "Display", "Screen off after", "Seconds of inactivity before the backlight goes out. 0 disables.", 0, 1800, 10, "s", 60),
     DEF_INT("dim_level",   "Display", "Dim level",        nullptr, 1, 128, 1, nullptr, 25),
-    DEF_ENUM("rotation",    "Display", "Orientation",      "Takes effect after a restart", kOptRotation, 0),
-    DEF_ENUM("term_font",   "Display", "Chat font size",   "The message grid is sized from this", kOptTermFont, 0),
-    DEF_INT("term_linesp", "Display", "Line spacing",     "Pixels between chat rows. Negative packs more lines on screen.", -6, 8, 1, "px", 0),
     DEF_BOOL("sb_seconds",  "Display", "Seconds in clock", "Show seconds in the status bar", 0),
-    DEF_BOOL("sb_battpct",  "Display", "Battery percent",  "Show the number next to the battery icon", 1),
+    DEF_BOOL("kb_light",    "Display", "Keyboard backlight", "Light the keyboard at boot instead of waiting for ALT+B", 0),
+    DEF_INT("kb_bright",   "Display", "Keyboard brightness", "ALT+B also toggles back to this level", 0, 255, 5, nullptr, 128),
+    DEF_INT("ball_vstep",  "Display", "Trackball up/down",   "Pulses per step. Lower is more sensitive.", 1, 8, 1, nullptr, 2),
+    DEF_INT("ball_hstep",  "Display", "Trackball left/right","Pulses per step. Lower is more sensitive.", 1, 15, 1, nullptr, 5),
 
     // --- Sound -----------------------------------------------------------
     DEF_BOOL("snd_enable",  "Sound",   "Sound",            nullptr, 1),
@@ -89,80 +157,25 @@ const std::vector<SettingDef> kDefs = {
     DEF_SECRET("wifi_pass",   "WiFi",    "Password",         nullptr, ""),
     DEF_BOOL("wifi_macrnd", "WiFi",    "Randomize MAC",    "New MAC address on every connect", 0),
     DEF_INT("wifi_retry",  "WiFi",    "Retry delay",      "Seconds between reconnect attempts", 1, 120, 1, "s", 5),
-
-    // --- IRC server ------------------------------------------------------
-    DEF_TEXT("irc_server",  "Server", "Server",           nullptr, "irc.supernets.org"),
-    DEF_INT("irc_port",    "Server", "Port",             nullptr, 1, 65535, 1, nullptr, 6697),
-    DEF_BOOL("irc_tls",     "Server", "TLS",              nullptr, 1),
-    DEF_BOOL("irc_tlsverif","Server", "Verify certificate", "Off accepts self-signed certificates", 0),
-    DEF_BOOL("irc_fallback","Server", "Plaintext fallback", "Retry on port 6667 if TLS fails", 1),
-    DEF_BOOL("irc_autoconn","Server", "Connect on boot",  "Off by default: connect from the IRC app instead", 0),
-    DEF_TEXT("irc_nick",    "Identity", "Nick",             nullptr, ""),
-    DEF_TEXT("irc_altnick", "Identity", "Alternate nick",   "Used if the first one is taken", ""),
-    DEF_TEXT("irc_user",    "Identity", "Username",         nullptr, "tdeck"),
-    DEF_TEXT("irc_real",    "Identity", "Real name",        nullptr, "ACID DROP"),
-    DEF_TEXT("irc_quitmsg", "Identity", "Quit message",     nullptr, "ACID DROP"),
-
-    // --- IRC auth --------------------------------------------------------
-    DEF_BOOL("irc_sasl",    "Authentication", "SASL PLAIN",      "Authenticate during connection registration", 0),
-    DEF_TEXT("irc_saslusr", "Authentication", "SASL account",    "Defaults to your nick when empty", ""),
-    DEF_SECRET("irc_saslpass","Authentication", "SASL password",   nullptr, ""),
-    DEF_SECRET("irc_nspass",  "Authentication", "NickServ password", "Sent as IDENTIFY after connecting, if SASL is off", ""),
-
-    // --- IRC timing (the reconnect/rejoin behaviour) ---------------------
-    DEF_INT("irc_joindly", "Connection", "Join delay",     "Wait this long after the welcome (001) before joining", 0, 60000, 500, "ms", 6000),
-    DEF_BOOL("irc_recon",   "Connection", "Auto-reconnect", nullptr, 1),
-    DEF_INT("irc_recondly","Connection", "Reconnect delay","First retry waits this long, then backs off", 1, 300, 1, "s", 5),
-    DEF_INT("irc_reconmax","Connection", "Max backoff",    "Reconnect delay never exceeds this", 5, 900, 5, "s", 120),
-    DEF_BOOL("irc_rejoin",  "Connection", "Rejoin on kick", nullptr, 1),
-    DEF_INT("irc_kickdly", "Connection", "Kick rejoin delay", nullptr, 1, 300, 1, "s", 3),
-    DEF_BOOL("irc_retryjn", "Connection", "Retry failed joins", "Keep trying when a channel is +i, +k, +b or full", 1),
-    DEF_INT("irc_lockdly", "Connection", "Join retry delay", nullptr, 1, 300, 1, "s", 5),
-    DEF_INT("irc_pingout", "Connection", "Ping timeout",   "Drop the link if the server is silent this long", 30, 900, 10, "s", 260),
-
-    // --- IRC display -----------------------------------------------------
-    DEF_BOOL("irc_colors",  "Appearance", "mIRC colors",   "Render ^C colour codes", 1),
-    DEF_BOOL("irc_bgcolor", "Appearance", "Background colors", "Needed for ANSI art drawn with coloured spaces", 1),
-    DEF_BOOL("irc_ansi",    "Appearance", "ANSI escapes",  "Also parse ESC[ SGR sequences", 1),
-    DEF_BOOL("irc_format",  "Appearance", "Bold/italic/underline", "Render ^B ^] ^_ and reverse video", 1),
-    DEF_ENUM("irc_nickcol", "Appearance", "Nick colors",   "Hashed keeps a nick the same colour every session", kOptNickColor, 1),
-    DEF_ENUM("irc_ts",      "Appearance", "Timestamps",    nullptr, kOptTimestamp, 1),
-    DEF_BOOL("irc_topbar",  "Appearance", "Show the top bar", "The toggle in the input row also sets this", 1),
-    DEF_BOOL("irc_joinpart","Appearance", "Show joins/parts", nullptr, 1),
-    DEF_BOOL("irc_showmode","Appearance", "Show mode changes", nullptr, 1),
-    DEF_BOOL("irc_showraw", "Appearance", "Raw server lines", "Mirror everything into the status window. Costs memory on a busy server.", 0),
-    DEF_INT("irc_scrollbk","Appearance", "Scrollback",    "Lines kept per window. This lives in internal RAM, so large values across several windows cost real memory.", 100, 3000, 100, "lines", 400),
-    DEF_TEXT("irc_hilight", "Appearance", "Highlight words", "Comma separated, in addition to your nick", ""),
-    DEF_BOOL("irc_beepctcp","Appearance", "Allow CTCP",    "Answer VERSION, PING and TIME requests", 1),
-
-    // --- GPS -------------------------------------------------------------
-    DEF_BOOL("gps_enable",  "GPS",     "GPS",              "T-Deck Plus only", 1),
-    DEF_INT("gps_baud",    "GPS",     "Baud rate",        nullptr, 4800, 115200, 4800, nullptr, 9600),
-    DEF_BOOL("gps_statbar", "GPS",     "Status bar icon",  nullptr, 1),
-
-    // --- LoRa ------------------------------------------------------------
-    DEF_BOOL("lora_enable", "LoRa",    "LoRa radio",       nullptr, 0),
-    DEF_FLOAT("lora_freq",   "LoRa",    "Frequency",        nullptr, 40000, 100000, 10, 100, "MHz", 91500),
-    DEF_ENUM("lora_bw",     "LoRa",    "Bandwidth",        nullptr, kOptLoraBw, 0),
-    DEF_INT("lora_sf",     "LoRa",    "Spreading factor", nullptr, 6, 12, 1, nullptr, 9),
-    DEF_INT("lora_cr",     "LoRa",    "Coding rate",      "4/N", 5, 8, 1, nullptr, 7),
-    DEF_INT("lora_power",  "LoRa",    "TX power",         nullptr, -9, 22, 1, "dBm", 17),
-
-    // --- Bluetooth -------------------------------------------------------
-    DEF_BOOL("ble_enable",  "Bluetooth", "Bluetooth",      nullptr, 0),
-    DEF_TEXT("ble_name",    "Bluetooth", "Advertised name", nullptr, "acid-drop"),
+    DEF_BOOL("net_static",  "WiFi",    "Static address",   "Off uses DHCP. On requires the address, gateway and mask below.", 0),
+    DEF_TEXT("net_ip",      "WiFi",    "IP address",       nullptr, ""),
+    DEF_TEXT("net_gw",      "WiFi",    "Gateway",          nullptr, ""),
+    DEF_TEXT("net_mask",    "WiFi",    "Subnet mask",      nullptr, "255.255.255.0"),
+    DEF_TEXT("net_dns1",    "WiFi",    "DNS server",       nullptr, ""),
+    DEF_TEXT("net_dns2",    "WiFi",    "DNS server 2",     nullptr, ""),
 
     // --- Advanced --------------------------------------------------------
     DEF_ENUM("log_level",   "Advanced", "Log level",       nullptr, kOptLogLevel, 2),
-    DEF_BOOL("log_screen",  "Advanced", "On-screen syslog", "Keep a log ring buffer for the syslog view", 1),
-    DEF_BOOL("dev_mode",    "Advanced", "Developer mode",  "Shows raw sockets, heap and frame timing", 0),
+    DEF_BOOL("log_screen",  "Advanced", "Keep log in memory", "Logging always runs; this keeps the last 250 lines in RAM so the System log screen has something to show. Off frees that RAM and leaves the screen empty.", 1),
 };
 
 #undef DEF_BOOL
+#undef DEF_HIDDEN
 #undef DEF_INT
 #undef DEF_FLOAT
 #undef DEF_TEXT
 #undef DEF_SECRET
+#undef DEF_COLOR
 #undef DEF_ENUM
 
 // --- storage --------------------------------------------------------------
@@ -188,6 +201,9 @@ int32_t clampToDef(const SettingDef& def, int32_t value) {
             if (value < 0) return 0;
             return value >= count ? count - 1 : value;
         }
+        case SettingType::Color:
+            // A colour is three bytes, not a range to clamp into.
+            return value & 0xFFFFFF;
         case SettingType::Int:
         case SettingType::Float:
             if (value < def.min) return def.min;
@@ -234,10 +250,6 @@ void begin() {
         s_texts["irc_nick"] = nick;
         s_prefs.putString("irc_nick", nick);
     }
-    if (s_texts["irc_altnick"].isEmpty()) {
-        s_texts["irc_altnick"] = s_texts["irc_nick"] + "_";
-    }
-
     s_ready = true;
     LOG_I(TAG, "loaded %u settings", (unsigned)kDefs.size());
 }
@@ -249,32 +261,6 @@ const SettingDef* find(const char* key) {
         if (strcmp(def.key, key) == 0) return &def;
     }
     return nullptr;
-}
-
-const char* groupOf(const char* section) {
-    // Listed explicitly rather than inferred from the name, so the sections can
-    // be titled for the person reading them instead of for a prefix test.
-    static const char* const kIrcSections[] = {
-        "Server", "Identity", "Authentication", "Connection", "Appearance", nullptr
-    };
-    for (const char* const* name = kIrcSections; *name; name++) {
-        if (strcmp(*name, section) == 0) return kGroupIrc;
-    }
-    return kGroupSystem;
-}
-
-std::vector<const char*> sections(const char* group) {
-    std::vector<const char*> out;
-    for (const auto& def : kDefs) {
-        if (group != nullptr && strcmp(groupOf(def.section), group) != 0) continue;
-
-        bool seen = false;
-        for (const char* s : out) {
-            if (strcmp(s, def.section) == 0) { seen = true; break; }
-        }
-        if (!seen) out.push_back(def.section);
-    }
-    return out;
 }
 
 // --- reads ----------------------------------------------------------------
@@ -360,42 +346,14 @@ String getAsString(const char* key) {
         case SettingType::Int:   return String(getInt(key));
         case SettingType::Float: return String(getFloat(key), 2);
         case SettingType::Text:  return getText(key);
+        case SettingType::Color: {
+            char buffer[10];
+            snprintf(buffer, sizeof(buffer), "#%06lX",
+                     static_cast<unsigned long>(getInt(key) & 0xFFFFFF));
+            return String(buffer);
+        }
     }
     return String();
-}
-
-void setFromString(const char* key, const String& value) {
-    const SettingDef* def = find(key);
-    if (!def) return;
-
-    switch (def->type) {
-        case SettingType::Bool:
-            setBool(key, value == "true" || value == "1" || value == "on");
-            break;
-        case SettingType::Enum: {
-            for (int i = 0; def->options[i]; i++) {
-                if (value.equalsIgnoreCase(def->options[i])) { setEnum(key, i); return; }
-            }
-            setInt(key, value.toInt());
-            break;
-        }
-        case SettingType::Int:   setInt(key, value.toInt()); break;
-        case SettingType::Float: setFloat(key, value.toFloat()); break;
-        case SettingType::Text:  setText(key, value); break;
-    }
-}
-
-void resetToDefault(const char* key) {
-    const SettingDef* def = find(key);
-    if (!def) return;
-    if (isNumeric(*def)) setInt(key, def->defNum);
-    else                 setText(key, def->defText);
-}
-
-void resetSection(const char* section) {
-    for (const auto& def : kDefs) {
-        if (strcmp(def.section, section) == 0) resetToDefault(def.key);
-    }
 }
 
 void factoryReset() {
@@ -407,80 +365,6 @@ void factoryReset() {
 
 void onChange(ChangeCb cb) {
     s_listeners.push_back(std::move(cb));
-}
-
-// --- JSON -----------------------------------------------------------------
-bool exportJson(const String& path, bool includeSecrets) {
-    if (!storage::ensureSdCard()) {
-        LOG_E(TAG, "export: no SD card");
-        return false;
-    }
-
-    JsonDocument doc;
-    doc["_firmware"] = "acid-drop";
-
-    for (const auto& def : kDefs) {
-        if (def.secret && !includeSecrets) continue;
-        JsonObject section = doc[def.section].isNull() ? doc[def.section].to<JsonObject>()
-                                                       : doc[def.section].as<JsonObject>();
-        switch (def.type) {
-            case SettingType::Bool:  section[def.key] = getBool(def.key); break;
-            case SettingType::Int:
-            case SettingType::Enum:  section[def.key] = getInt(def.key);  break;
-            case SettingType::Float: section[def.key] = getFloat(def.key); break;
-            case SettingType::Text:  section[def.key] = getText(def.key); break;
-        }
-    }
-
-    File file = SD.open(path, FILE_WRITE);
-    if (!file) {
-        LOG_E(TAG, "export: cannot open %s", path.c_str());
-        return false;
-    }
-    serializeJsonPretty(doc, file);
-    file.close();
-    LOG_I(TAG, "exported settings to %s", path.c_str());
-    return true;
-}
-
-bool importJson(const String& path) {
-    if (!storage::ensureSdCard()) {
-        LOG_E(TAG, "import: no SD card");
-        return false;
-    }
-
-    File file = SD.open(path, FILE_READ);
-    if (!file) {
-        LOG_E(TAG, "import: cannot open %s", path.c_str());
-        return false;
-    }
-
-    JsonDocument doc;
-    const DeserializationError err = deserializeJson(doc, file);
-    file.close();
-
-    if (err) {
-        LOG_E(TAG, "import: %s", err.c_str());
-        return false;
-    }
-
-    unsigned applied = 0;
-    for (const auto& def : kDefs) {
-        JsonVariant value = doc[def.section][def.key];
-        if (value.isNull()) continue;
-
-        switch (def.type) {
-            case SettingType::Bool:  setBool(def.key, value.as<bool>()); break;
-            case SettingType::Int:
-            case SettingType::Enum:  setInt(def.key, value.as<int32_t>()); break;
-            case SettingType::Float: setFloat(def.key, value.as<float>()); break;
-            case SettingType::Text:  setText(def.key, value.as<String>()); break;
-        }
-        applied++;
-    }
-
-    LOG_I(TAG, "imported %u settings from %s", applied, path.c_str());
-    return true;
 }
 
 } // namespace settings

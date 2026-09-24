@@ -23,6 +23,5 @@ bool probablyCharging();
 
 // Forces the screen back on and restarts the inactivity timers.
 void wake();
-bool screenOn();
 
 } // namespace power

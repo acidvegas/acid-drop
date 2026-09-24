@@ -9,7 +9,6 @@ constexpr size_t kMaxEntries = 250;
 
 LogLevel              s_level = LogLevel::Info;
 std::vector<LogEntry> s_entries;
-void                (*s_cb)(const LogEntry&) = nullptr;
 bool                  s_keepHistory = true;
 
 const char* levelName(LogLevel level) {
@@ -44,7 +43,6 @@ void setKeepHistory(bool keep) {
     s_keepHistory = keep;
     if (!keep) s_entries.clear();
 }
-LogLevel level() { return s_level; }
 
 void write(LogLevel level, const char* tag, const char* fmt, ...) {
     if (static_cast<uint8_t>(level) > static_cast<uint8_t>(s_level)) return;
@@ -78,8 +76,6 @@ void write(LogLevel level, const char* tag, const char* fmt, ...) {
 
     if (s_entries.size() >= kMaxEntries) s_entries.erase(s_entries.begin());
     s_entries.push_back(entry);
-
-    if (s_cb) s_cb(s_entries.back());
 }
 
 const std::vector<LogEntry>& entries() { return s_entries; }
@@ -95,8 +91,6 @@ void replay() {
 }
 
 
-void clear() { s_entries.clear(); }
 
-void onAppend(void (*cb)(const LogEntry&)) { s_cb = cb; }
 
 } // namespace logging

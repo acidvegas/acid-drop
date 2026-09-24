@@ -5,6 +5,7 @@
 #include "board/Display.h"
 #include "board/pins.h"
 #include "core/Log.h"
+#include "core/Settings.h"
 
 namespace input {
 namespace {
@@ -19,7 +20,11 @@ KeyHook  s_hook;
 std::function<void()> s_holdHandler;
 uint32_t s_lastActivity = 0;
 uint32_t s_readyAt      = 0;   // ignore input until the pins have settled
-uint8_t  s_ballDivisor  = 2;
+// Trackball pulses required per emitted key, per axis. Lower is more
+// sensitive. Set from the settings; the defaults are what shipped before they
+// were configurable.
+uint8_t  s_ballVerticalStep   = 2;
+uint8_t  s_ballHorizontalStep = 5;
 
 // --- key queue ------------------------------------------------------------
 // LVGL polls at its own rate, so keys are buffered rather than dropped.
@@ -64,24 +69,151 @@ volatile uint32_t s_clickEdges = 0;
 
 void IRAM_ATTR onBallClick() { s_clickEdges++; }
 
-void IRAM_ATTR onBallUp()    { s_ballUp++; }
-void IRAM_ATTR onBallDown()  { s_ballDown++; }
-void IRAM_ATTR onBallLeft()  { s_ballLeft++; }
-void IRAM_ATTR onBallRight() { s_ballRight++; }
+// Every pulse on any axis also bumps this. It is the only reliable way to ask
+// "has the ball moved recently": the per-axis counters cannot answer, because
+// pulses below the emit threshold are never consumed and so never read as
+// zero. See drainBall().
+volatile uint32_t s_ballTicks = 0;
+
+void IRAM_ATTR onBallUp()    { s_ballUp++;    s_ballTicks++; }
+void IRAM_ATTR onBallDown()  { s_ballDown++;  s_ballTicks++; }
+void IRAM_ATTR onBallLeft()  { s_ballLeft++;  s_ballTicks++; }
+void IRAM_ATTR onBallRight() { s_ballRight++; s_ballTicks++; }
+
+// Axis lock.
+//
+// A roll across this trackball is never clean: a flick meant to scroll the
+// backlog also ticks the left or right sensor a few times on the way past, and
+// those stray pulses were switching IRC windows mid-scroll. So the first axis
+// to cross its threshold claims the ball, the other axis is discarded while
+// that lasts, and the claim is released once the ball has been still.
+enum class BallAxis : uint8_t { None, Vertical, Horizontal };
+
+BallAxis s_ballAxis      = BallAxis::None;
+uint32_t s_ballLastMove  = 0;
+uint32_t s_ballSeenTicks = 0;
+
+// How long the ball has to sit still before the other axis can have a turn.
+constexpr uint32_t kAxisReleaseMs = 300;
+
+int16_t peek(volatile int16_t& counter) {
+    noInterrupts();
+    const int16_t value = counter;
+    interrupts();
+    return value;
+}
+
+void clearCounter(volatile int16_t& counter) {
+    noInterrupts();
+    counter = 0;
+    interrupts();
+}
 
 // Drains one axis' pulse counter into key events.
-void drainAxis(volatile int16_t& counter, uint32_t key) {
+void emitAxis(volatile int16_t& counter, uint32_t key, uint8_t step) {
     noInterrupts();
     const int16_t pulses = counter;
-    if (pulses >= s_ballDivisor) counter = 0;
+    if (pulses >= step) counter = 0;
     interrupts();
 
-    if (pulses < s_ballDivisor) return;
+    if (pulses < step) return;
 
-    int steps = pulses / s_ballDivisor;
+    int steps = pulses / step;
     if (steps > 4) steps = 4;            // a hard flick should not spray keys
     for (int i = 0; i < steps; i++) s_keys.push(key);
     noteActivity();
+}
+
+void drainBall() {
+    const uint32_t now = millis();
+
+    noInterrupts();
+    const uint32_t ticks = s_ballTicks;
+    interrupts();
+
+    // Idle is measured from the pulse counter, not from the per-axis totals.
+    // emitAxis() only consumes a counter once it reaches the threshold, so a
+    // few sub-threshold pulses sit there indefinitely - and testing those for
+    // zero meant the axis lock, once taken, was never released. The ball stayed
+    // locked to whichever direction moved first and the other axis was wiped
+    // on every pass, which killed backlog scrolling outright.
+    if (ticks != s_ballSeenTicks) {
+        s_ballSeenTicks = ticks;
+        s_ballLastMove  = now;
+    } else if (s_ballAxis != BallAxis::None &&
+               static_cast<int32_t>(now - s_ballLastMove) >
+               static_cast<int32_t>(kAxisReleaseMs)) {
+        // Still for long enough: drop the lock and bin the leftover jitter, so
+        // it cannot add up over minutes into a stray window change.
+        s_ballAxis = BallAxis::None;
+        clearCounter(s_ballUp);
+        clearCounter(s_ballDown);
+        clearCounter(s_ballLeft);
+        clearCounter(s_ballRight);
+        return;
+    }
+
+    const int16_t up    = peek(s_ballUp);
+    const int16_t down  = peek(s_ballDown);
+    const int16_t left  = peek(s_ballLeft);
+    const int16_t right = peek(s_ballRight);
+
+    const int16_t vertical   = up + down;
+    const int16_t horizontal = left + right;
+
+    if (vertical == 0 && horizontal == 0) return;
+
+    const uint8_t verticalStep   = s_ballVerticalStep;
+    const uint8_t horizontalStep = s_ballHorizontalStep;
+
+    // Claim an axis for this gesture. Whichever direction has travelled
+    // further wins, and it still has to clear its own threshold - below that
+    // there is not enough movement to say which way this roll is going, so
+    // the pulses are kept and reconsidered next pass.
+    if (s_ballAxis == BallAxis::None) {
+        if (vertical >= verticalStep && vertical >= horizontal) {
+            s_ballAxis = BallAxis::Vertical;
+        } else if (horizontal >= horizontalStep && horizontal > vertical) {
+            s_ballAxis = BallAxis::Horizontal;
+        } else {
+            return;
+        }
+    }
+
+    if (s_ballAxis == BallAxis::Vertical) {
+        emitAxis(s_ballUp,   LV_KEY_UP,   verticalStep);
+        emitAxis(s_ballDown, LV_KEY_DOWN, verticalStep);
+        clearCounter(s_ballLeft);
+        clearCounter(s_ballRight);
+    } else {
+        emitAxis(s_ballLeft,  LV_KEY_LEFT,  horizontalStep);
+        emitAxis(s_ballRight, LV_KEY_RIGHT, horizontalStep);
+        clearCounter(s_ballUp);
+        clearCounter(s_ballDown);
+    }
+}
+
+// --- keyboard backlight ---------------------------------------------------
+// Commands taken from LilyGo's own Keyboard_T_Deck_Master example, which is
+// the documentation for this interface.
+constexpr uint8_t kKbBrightnessCmd     = 0x01;   // set brightness now, 0-255
+constexpr uint8_t kKbAltBBrightnessCmd = 0x02;   // what ALT+B toggles to, 30-255
+
+// LilyGo's example waits 500ms after the peripheral rail comes up before
+// addressing the keyboard controller, because the C3 has to boot first. The
+// rail is switched on about 150ms into setup(), so this is measured from
+// power-on with that headroom folded in.
+constexpr uint32_t kKeyboardReadyMs = 700;
+
+void writeKeyboard(uint8_t command, uint8_t value) {
+    const uint8_t payload[2] = {command, value};
+    // Through lgfx::i2c for the same reason the key poll is: LovyanGFX owns
+    // this port for the touch controller, and a second driver on it means one
+    // of them silently stops working.
+    if (!lgfx::i2c::transactionWrite(0, KEYBOARD_I2C_ADDR, payload,
+                                     sizeof(payload), BOARD_I2C_FREQ).has_value()) {
+        LOG_W(TAG, "keyboard did not accept command 0x%02X", command);
+    }
 }
 
 // --- keyboard -------------------------------------------------------------
@@ -185,6 +317,10 @@ void pointerReadCb(lv_indev_t* indev, lv_indev_data_t* data) {
 
 void begin() {
     s_group = lv_group_create();
+    // LVGL wraps focus by default, so rolling past the last row jumped back to
+    // the first one. On a trackball that reads as the list teleporting: down
+    // means down, and the end of the list is the end.
+    lv_group_set_wrap(s_group, false);
     // Deliberately NOT lv_group_set_default(): that auto-adds every focusable
     // widget anyone creates, including the quick-settings sliders and toast
     // buttons living on the top layer. Trackball focus would then walk off the
@@ -222,6 +358,15 @@ void begin() {
     // pull-up time to win before anything reads it as a press.
     s_readyAt      = millis() + 400;
     s_lastActivity = millis();
+
+    applySettings();
+
+    // The keyboard controller has to have finished booting before it will
+    // answer. In practice the display bring-up has already taken longer than
+    // this, so the wait is almost always zero.
+    while (millis() < kKeyboardReadyMs) delay(10);
+    applyKeyboardBacklight();
+
     LOG_I(TAG, "touch, trackball and keyboard registered");
 }
 
@@ -242,10 +387,7 @@ void loop() {
         pollKeyboard();
     }
 
-    drainAxis(s_ballUp,    LV_KEY_UP);
-    drainAxis(s_ballDown,  LV_KEY_DOWN);
-    drainAxis(s_ballLeft,  LV_KEY_LEFT);
-    drainAxis(s_ballRight, LV_KEY_RIGHT);
+    drainBall();
 
     // A tap selects; a hold is the way back to the launcher, since the T-Deck
     // keyboard has no escape key and not every screen has room for a button.
@@ -286,9 +428,35 @@ void loop() {
     }
 }
 
-lv_indev_t* keypad()  { return s_keypad; }
-lv_indev_t* pointer() { return s_pointer; }
 lv_group_t* group()   { return s_group; }
+
+void applySettings() {
+    const int32_t vertical   = settings::getInt("ball_vstep");
+    const int32_t horizontal = settings::getInt("ball_hstep");
+
+    // Never zero: emitAxis divides by the step.
+    s_ballVerticalStep   = vertical   > 0 ? static_cast<uint8_t>(vertical)   : 1;
+    s_ballHorizontalStep = horizontal > 0 ? static_cast<uint8_t>(horizontal) : 1;
+}
+
+void setKeyboardBacklight(uint8_t brightness) {
+    writeKeyboard(kKbBrightnessCmd, brightness);
+}
+
+void applyKeyboardBacklight() {
+    const bool    on    = settings::getBool("kb_light");
+    const uint8_t level = on ? static_cast<uint8_t>(settings::getInt("kb_bright")) : 0;
+
+    setKeyboardBacklight(level);
+
+    // Keep ALT+B working: tell the keyboard to toggle back to the brightness
+    // chosen here rather than to its own default. Its range for this command
+    // starts at 30, so a lower setting is clamped up for the toggle only - the
+    // backlight itself is still whatever was asked for.
+    if (on) writeKeyboard(kKbAltBBrightnessCmd, level < 30 ? 30 : level);
+
+    LOG_I(TAG, "keyboard backlight %s (level %u)", on ? "on" : "off", level);
+}
 
 void setKeyHook(KeyHook hook) { s_hook = std::move(hook); }
 void setHoldHandler(std::function<void()> handler) { s_holdHandler = std::move(handler); }
@@ -297,6 +465,5 @@ void clearKeyHook()           { s_hook = nullptr; }
 uint32_t lastActivity() { return s_lastActivity; }
 void     noteActivity() { s_lastActivity = millis(); }
 
-void setBallDivisor(uint8_t divisor) { s_ballDivisor = divisor ? divisor : 1; }
 
 } // namespace input

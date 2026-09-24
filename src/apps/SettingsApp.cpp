@@ -4,15 +4,13 @@
 
 #include "apps/IrcApp.h"
 #include "board/Audio.h"
-#include "board/Ble.h"
 #include "board/Display.h"
-#include "board/Gps.h"
 #include "board/Power.h"
-#include "board/Radio.h"
 #include "board/Input.h"
 #include "core/Log.h"
 #include "core/Settings.h"
 #include "irc/IrcClient.h"
+#include "relay/WeechatRelay.h"
 #include "net/WifiService.h"
 #include "ui/Theme.h"
 #include "ui/Ui.h"
@@ -27,15 +25,109 @@ lv_obj_t* s_header  = nullptr;
 lv_obj_t* s_list    = nullptr;
 lv_obj_t* s_editor  = nullptr;
 
-String      s_section;                       // empty while showing the section list
-const char* s_group   = settings::kGroupSystem;
+String      s_group;     // empty at the top level
+String      s_section;   // empty while showing a group's section list
 const SettingDef* s_editing = nullptr;
 
-void showSections();
+// Brightness, volume and the keyboard backlight are set by looking at the
+// device, so dragging their slider applies the value straight away instead of
+// waiting for Save. If the editor is then cancelled, this puts it back.
+bool s_previewing = false;
+
+// True for the settings worth applying while the slider moves.
+bool isPreviewable(const char* key) {
+    return strcmp(key, "brightness") == 0 ||
+           strcmp(key, "snd_volume") == 0 ||
+           strcmp(key, "kb_bright")  == 0;
+}
+
+void applyPreview(const char* key, int32_t value) {
+    if (strcmp(key, "brightness") == 0) {
+        display::setBrightness(value);
+    } else if (strcmp(key, "snd_volume") == 0) {
+        audio::setVolume(static_cast<uint8_t>(value));
+    } else if (strcmp(key, "kb_bright") == 0) {
+        // Straight to the keyboard, ignoring the on/off setting: you are
+        // looking at the keyboard while you drag this, so it has to light up
+        // even if the boot setting is off.
+        input::setKeyboardBacklight(static_cast<uint8_t>(value));
+    }
+}
+
+// Puts a previewed setting back to whatever is actually saved. This re-derives
+// from the settings rather than replaying the old number, because the keyboard
+// backlight also depends on its own on/off switch - putting the brightness
+// back on its own would leave the keyboard lit with the feature turned off.
+void restorePreview(const char* key) {
+    if (strcmp(key, "brightness") == 0) {
+        display::setBrightness(settings::getInt(key));
+    } else if (strcmp(key, "snd_volume") == 0) {
+        audio::setVolume(static_cast<uint8_t>(settings::getInt(key)));
+    } else if (strcmp(key, "kb_bright") == 0) {
+        input::applyKeyboardBacklight();
+    }
+}
+
+// The menu is three levels: a short list of groups, the sections inside a
+// group, then the values inside a section. Before this it was one flat list of
+// eleven unlabelled sections - five of which were IRC settings with nothing
+// saying so - plus WiFi appearing three separate times.
+void showGroups();
+void showGroup(const String& group);
 void showSection(const String& section);
+void addSettingRows(const String& section);
+
+// Re-draws whichever level is currently showing, after a value changed. It
+// cannot just be showSection(s_section): a group that lists its values inline
+// has no section open, and that would rebuild the list as empty.
+void refreshCurrentList();
 
 // A row that opens another screen rather than editing a value.
-void addShortcutRow(const char* label, const char* help, void (*onClick)());
+void addShortcutRow(const char* icon, const char* label, void (*onClick)());
+
+// How the menu is laid out. Presentation lives here rather than in the
+// settings registry, so re-arranging the menu never means touching the values.
+struct MenuGroup {
+    const char*        title;
+    const char*        icon;
+    const char* const* sections;   // nullptr-terminated, in display order
+    bool               hasExtras;  // shortcut rows appended by showGroup()
+};
+
+const char* const kIrcSections[]     = {"Server", "ZNC", "Relay", "Identity",
+                                        "Authentication", "Connection", "Chat",
+                                        nullptr};
+const char* const kWifiSections[]    = {"WiFi", nullptr};
+const char* const kThemeSections[]   = {"Theme", nullptr};
+const char* const kDisplaySections[] = {"Display", nullptr};
+const char* const kSoundSections[]   = {"Sound", nullptr};
+const char* const kPowerSections[]   = {"Power", nullptr};
+const char* const kDeviceSections[]  = {"Device", nullptr};
+const char* const kSystemSections[]  = {"Advanced", nullptr};
+
+const MenuGroup kMenu[] = {
+    {"IRC",     LV_SYMBOL_KEYBOARD, kIrcSections,     true},
+    {"WiFi",    LV_SYMBOL_WIFI,     kWifiSections,    true},
+    {"Theme",   LV_SYMBOL_TINT,     kThemeSections,   false},
+    {"Display", LV_SYMBOL_IMAGE,    kDisplaySections, false},
+    {"Sound",   LV_SYMBOL_AUDIO,    kSoundSections,   false},
+    {"Power",   LV_SYMBOL_CHARGE,   kPowerSections,   false},
+    {"Device",  LV_SYMBOL_SETTINGS, kDeviceSections,  false},
+    {"System",  LV_SYMBOL_FILE,     kSystemSections,  true},
+};
+
+const MenuGroup* findGroup(const String& title) {
+    for (const MenuGroup& group : kMenu) {
+        if (title == group.title) return &group;
+    }
+    return nullptr;
+}
+
+// True when the group is a single section with nothing else on it, in which
+// case its own screen would be one row deep and is skipped entirely.
+bool groupIsPassthrough(const MenuGroup& group) {
+    return !group.hasExtras && group.sections[0] != nullptr && group.sections[1] == nullptr;
+}
 
 // --- applying a change ----------------------------------------------------
 // Settings are only useful if changing them does something immediately.
@@ -46,16 +138,26 @@ void applyLive(const char* key) {
     else if (name == "dim_secs" || name == "off_secs" || name == "dim_level" ||
              name == "cpu_mhz") { power::applySettings(); }
     else if (name.startsWith("snd_"))  { audio::applySettings(); }
+    else if (name.startsWith("kb_"))   { input::applyKeyboardBacklight(); }
+    else if (name.startsWith("ball_")) { input::applySettings(); }
     else if (name == "wifi_enable")    { net::setEnabled(settings::getBool(key)); }
     else if (name == "wifi_ps" || name == "dev_name") { net::applySettings(); }
-    else if (name == "ble_enable")     { ble::setEnabled(settings::getBool(key)); }
-    else if (name == "ble_name")       { if (ble::enabled()) { ble::setEnabled(false); ble::setEnabled(true); } }
-    else if (name == "gps_enable")     { gps::setEnabled(settings::getBool(key)); }
-    else if (name.startsWith("lora_")) { radio::applySettings(); }
+    // Addressing is applied on the next association, so changing it while
+    // connected does nothing until the link comes back. Say so rather than
+    // silently doing nothing.
+    else if (name.startsWith("net_")) {
+        ui::toast(net::isConnected() ? "Applies on the next connection"
+                                     : "Saved");
+    }
     else if (name == "tz_offset" || name == "dst") { net::applyTimezone(); }
     else if (name == "ntp_server" || name == "ntp_enable") { net::syncClock(true); }
+    else if (name == "chat_mode")      { ui::switchChatMode(); }
+    else if (name.startsWith("znc_"))  { ui::irc().applySettings(); }
+    else if (name.startsWith("relay_")) { ui::relay().applySettings(); }
     else if (name.startsWith("irc_"))  { ui::irc().applySettings(); ircapp::applySettings(); }
     else if (name.startsWith("term_")) { ircapp::applySettings(); }
+    // th_* is handled by the colour editor, which calls ui::restyle() - that
+    // rebuilds this screen, so there is nothing to apply here.
 
     LOG_I(TAG, "%s = %s", key, settings::getAsString(key).c_str());
 }
@@ -63,6 +165,13 @@ void applyLive(const char* key) {
 // --- editors --------------------------------------------------------------
 
 void closeEditor() {
+    // Still previewing when the editor goes away means it was not saved, so
+    // the live value has to be put back where it was.
+    if (s_previewing && s_editing) {
+        restorePreview(s_editing->key);
+        s_previewing = false;
+    }
+
     if (s_editor) {
         lv_obj_delete(s_editor);
         s_editor = nullptr;
@@ -89,7 +198,7 @@ lv_obj_t* makeEditorShell(const SettingDef& def) {
 
     lv_obj_t* title = lv_label_create(card);
     lv_label_set_text(title, def.label);
-    lv_obj_set_style_text_font(title, theme::uiFont(), 0);
+    lv_obj_set_style_text_font(title, theme::uiFontTiny(), 0);
     lv_obj_set_style_text_color(title, theme::accent(), 0);
 
     if (def.help) {
@@ -97,7 +206,7 @@ lv_obj_t* makeEditorShell(const SettingDef& def) {
         lv_label_set_text(help, def.help);
         lv_label_set_long_mode(help, LV_LABEL_LONG_WRAP);
         lv_obj_set_width(help, LV_PCT(100));
-        lv_obj_set_style_text_font(help, theme::uiFontSmall(), 0);
+        lv_obj_set_style_text_font(help, theme::uiFontTiny(), 0);
         lv_obj_set_style_text_color(help, theme::textDim(), 0);
     }
 
@@ -115,7 +224,7 @@ void addEditorButtons(lv_obj_t* card, lv_event_cb_t onSave) {
     lv_obj_set_scrollable(row, false);
 
     lv_obj_t* cancel = lv_button_create(row);
-    lv_obj_set_style_bg_color(cancel, lv_color_hex(theme::kSurfaceAlt), 0);
+    lv_obj_set_style_bg_color(cancel, theme::surfaceAlt(), 0);
     lv_obj_t* cancelLabel = lv_label_create(cancel);
     lv_label_set_text(cancelLabel, "Cancel");
     lv_obj_center(cancelLabel);
@@ -126,7 +235,7 @@ void addEditorButtons(lv_obj_t* card, lv_event_cb_t onSave) {
     lv_obj_set_style_bg_color(save, theme::accent(), 0);
     lv_obj_t* saveLabel = lv_label_create(save);
     lv_label_set_text(saveLabel, "Save");
-    lv_obj_set_style_text_color(saveLabel, lv_color_hex(theme::kBackground), 0);
+    lv_obj_set_style_text_color(saveLabel, theme::background(), 0);
     lv_obj_center(saveLabel);
     lv_obj_add_event_cb(save, onSave, LV_EVENT_CLICKED, nullptr);
     lv_group_add_obj(input::group(), save);
@@ -141,7 +250,7 @@ void openTextEditor(const SettingDef& def) {
     lv_textarea_set_text(field, settings::getText(def.key).c_str());
     lv_textarea_set_password_mode(field, def.secret);
     lv_obj_set_width(field, LV_PCT(100));
-    lv_obj_set_style_text_font(field, theme::uiFont(), 0);
+    lv_obj_set_style_text_font(field, theme::uiFontTiny(), 0);
     lv_group_add_obj(input::group(), field);
     lv_group_focus_obj(field);
 
@@ -154,7 +263,7 @@ void openTextEditor(const SettingDef& def) {
             const char* key = s_editing->key;
             closeEditor();
             applyLive(key);
-            showSection(s_section);
+            refreshCurrentList();
         }
     });
 }
@@ -171,9 +280,11 @@ void openNumberEditor(const SettingDef& def) {
 
     s_isSlider = useSlider;
 
+    s_previewing = isPreviewable(def.key);
+
     if (useSlider) {
         s_valueLabel = lv_label_create(card);
-        lv_obj_set_style_text_font(s_valueLabel, theme::uiFontLarge(), 0);
+        lv_obj_set_style_text_font(s_valueLabel, theme::uiFontTiny(), 0);
         lv_obj_set_style_text_color(s_valueLabel, theme::text(), 0);
 
         lv_obj_t* slider = lv_slider_create(card);
@@ -190,6 +301,10 @@ void openNumberEditor(const SettingDef& def) {
             String text = String(value);
             if (s_editing && s_editing->unit) text += " " + String(s_editing->unit);
             lv_label_set_text(s_valueLabel, text.c_str());
+
+            // Apply as it moves, without persisting: Save writes it, Cancel
+            // restores it.
+            if (s_previewing && s_editing) applyPreview(s_editing->key, value);
         }, LV_EVENT_VALUE_CHANGED, nullptr);
 
         s_control = slider;
@@ -211,7 +326,7 @@ void openNumberEditor(const SettingDef& def) {
         String text = "Range " + String(def.min) + " to " + String(def.max);
         if (def.unit) text += " " + String(def.unit);
         lv_label_set_text(range, text.c_str());
-        lv_obj_set_style_text_font(range, theme::uiFontSmall(), 0);
+        lv_obj_set_style_text_font(range, theme::uiFontTiny(), 0);
         lv_obj_set_style_text_color(range, theme::textDim(), 0);
     }
 
@@ -223,9 +338,14 @@ void openNumberEditor(const SettingDef& def) {
 
         const char* key = s_editing->key;
         settings::setInt(key, value);
+
+        // The previewed value is the one being kept, so stand the restore down
+        // before the editor closes.
+        s_previewing = false;
+
         closeEditor();
         applyLive(key);
-        showSection(s_section);
+        refreshCurrentList();
     });
 }
 
@@ -245,7 +365,7 @@ void openEnumEditor(const SettingDef& def) {
     lv_roller_set_visible_row_count(s_roller, 3);
     lv_obj_set_width(s_roller, LV_PCT(100));
     lv_obj_set_style_bg_color(s_roller, theme::accent(), LV_PART_SELECTED);
-    lv_obj_set_style_text_color(s_roller, lv_color_hex(theme::kBackground), LV_PART_SELECTED);
+    lv_obj_set_style_text_color(s_roller, theme::background(), LV_PART_SELECTED);
     lv_group_add_obj(input::group(), s_roller);
     lv_group_focus_obj(s_roller);
 
@@ -255,8 +375,105 @@ void openEnumEditor(const SettingDef& def) {
         settings::setEnum(key, lv_roller_get_selected(s_roller));
         closeEditor();
         applyLive(key);
-        showSection(s_section);
+        refreshCurrentList();
     });
+}
+
+// Picking a colour is a grid of swatches, not a colour wheel: a wheel needs
+// pixel-accurate pointing, and this device is driven with a trackball. Two
+// rows of greys and a spread of hues covers what anyone actually wants.
+const uint32_t kSwatches[] = {
+    0x000000, 0x07090C, 0x11151B, 0x1A2028, 0x2A323D, 0x454F5C,
+    0x6B7684, 0x8A94A3, 0xB8C0CC, 0xE6EAF0, 0xFFFFFF, 0xF5E6C8,
+    0x35E08A, 0x00FF9C, 0x1B7A4A, 0x58B4FF, 0x0077FF, 0x004E9A,
+    0xFF3B6E, 0xD00040, 0xFFB454, 0xFF7A00, 0xFFE800, 0xC8FF00,
+    0xB967FF, 0x7B2FFF, 0xFF00E6, 0x00E5FF, 0x00FFD5, 0xFF5555,
+};
+
+void openColorEditor(const SettingDef& def) {
+    lv_obj_t* card = makeEditorShell(def);
+
+    lv_obj_t* grid = lv_obj_create(card);
+    lv_obj_remove_style_all(grid);
+    lv_obj_set_width(grid, LV_PCT(100));
+    lv_obj_set_height(grid, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(grid, LV_FLEX_FLOW_ROW_WRAP);
+    lv_obj_set_flex_align(grid, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(grid, 5, 0);
+    lv_obj_set_style_pad_column(grid, 5, 0);
+    lv_obj_set_scrollable(grid, false);
+
+    const uint32_t current = static_cast<uint32_t>(settings::getInt(def.key)) & 0xFFFFFF;
+
+    for (const uint32_t colour : kSwatches) {
+        lv_obj_t* swatch = lv_obj_create(grid);
+        lv_obj_remove_style_all(swatch);
+        lv_obj_set_size(swatch, 26, 22);
+        lv_obj_set_style_bg_color(swatch, lv_color_hex(colour), 0);
+        lv_obj_set_style_bg_opa(swatch, LV_OPA_COVER, 0);
+        lv_obj_set_style_radius(swatch, 4, 0);
+        lv_obj_set_clickable(swatch, true);
+        lv_obj_set_scrollable(swatch, false);
+
+        // The one in use, and whatever the trackball is on, both need to be
+        // findable against a grid of colours - so both get an outline.
+        lv_obj_set_style_border_color(swatch, theme::text(), 0);
+        lv_obj_set_style_border_width(swatch, colour == current ? 2 : 0, 0);
+        lv_obj_set_style_outline_color(swatch, theme::text(), LV_STATE_FOCUSED);
+        lv_obj_set_style_outline_width(swatch, 2, LV_STATE_FOCUSED);
+        lv_obj_set_style_outline_opa(swatch, LV_OPA_COVER, LV_STATE_FOCUSED);
+        lv_obj_set_scroll_on_focus(swatch, true);
+        lv_group_add_obj(input::group(), swatch);
+
+        lv_obj_add_event_cb(swatch, [](lv_event_t* event) {
+            if (!s_editing) return;
+            const uint32_t chosen =
+                reinterpret_cast<uintptr_t>(lv_event_get_user_data(event)) & 0xFFFFFF;
+            const char* key = s_editing->key;
+
+            settings::setInt(key, static_cast<int32_t>(chosen));
+            closeEditor();
+
+            // Rebuilds the whole screen, this one included, which is why
+            // nothing may touch the editor after this call.
+            ui::restyle();
+        }, LV_EVENT_CLICKED, reinterpret_cast<void*>(static_cast<uintptr_t>(colour)));
+    }
+
+    // No Save button: tapping a colour is the decision. A Cancel is still
+    // worth having, because backing out of a grid with no obvious exit is not.
+    lv_obj_t* row = lv_obj_create(card);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, LV_PCT(100), 30);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(row, 8, 0);
+    lv_obj_set_scrollable(row, false);
+
+    lv_obj_t* reset = lv_button_create(row);
+    lv_obj_set_style_bg_color(reset, theme::surfaceAlt(), 0);
+    lv_obj_t* resetLabel = lv_label_create(reset);
+    lv_label_set_text(resetLabel, "Default");
+    lv_obj_center(resetLabel);
+    lv_group_add_obj(input::group(), reset);
+    lv_obj_add_event_cb(reset, [](lv_event_t*) {
+        if (!s_editing) return;
+        const char* key = s_editing->key;
+        settings::setInt(key, s_editing->defNum);
+        closeEditor();
+        ui::restyle();
+    }, LV_EVENT_CLICKED, nullptr);
+
+    lv_obj_t* cancel = lv_button_create(row);
+    lv_obj_set_style_bg_color(cancel, theme::surfaceAlt(), 0);
+    lv_obj_t* cancelLabel = lv_label_create(cancel);
+    lv_label_set_text(cancelLabel, "Cancel");
+    lv_obj_center(cancelLabel);
+    lv_group_add_obj(input::group(), cancel);
+    lv_group_focus_obj(cancel);
+    lv_obj_add_event_cb(cancel, [](lv_event_t*) { closeEditor(); }, LV_EVENT_CLICKED, nullptr);
 }
 
 void openEditor(const SettingDef& def) {
@@ -266,6 +483,7 @@ void openEditor(const SettingDef& def) {
         case SettingType::Enum:  openEnumEditor(def);   break;
         case SettingType::Int:
         case SettingType::Float: openNumberEditor(def); break;
+        case SettingType::Color: openColorEditor(def);  break;
         case SettingType::Bool:  break;   // handled inline
     }
 }
@@ -279,57 +497,95 @@ void rowEventCb(lv_event_t* event) {
     if (def->type == SettingType::Bool) {
         settings::setBool(def->key, !settings::getBool(def->key));
         applyLive(def->key);
-        showSection(s_section);
+        refreshCurrentList();
         return;
     }
     openEditor(*def);
 }
 
-void sectionEventCb(lv_event_t* event) {
-    const char* section = static_cast<const char*>(lv_event_get_user_data(event));
-    showSection(String(section));
-}
-
-void addShortcutRow(const char* label, const char* help, void (*onClick)()) {
+void addShortcutRow(const char* icon, const char* label, void (*onClick)()) {
     lv_obj_t* row = lv_obj_create(s_list);
     lv_obj_remove_style_all(row);
     lv_obj_set_size(row, LV_PCT(100), LV_SIZE_CONTENT);
-    theme::styleRow(row);
-    lv_obj_set_style_bg_color(row, lv_color_hex(theme::kAccentDim), 0);
+    theme::styleRowCompact(row);
+    // No standing tint. These used to be filled with the same green the focus
+    // highlight uses, so System log and About looked permanently selected.
     lv_obj_set_clickable(row, true);
     lv_obj_set_scrollable(row, false);
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(row, 1, 0);
+    lv_obj_set_style_pad_row(row, 2, 0);
     lv_group_add_obj(input::group(), row);
 
     lv_obj_t* title = lv_label_create(row);
-    lv_label_set_text(title, label);
-    lv_obj_set_style_text_font(title, theme::uiFont(), 0);
-
-    if (help) {
-        lv_obj_t* hint = lv_label_create(row);
-        lv_label_set_text(hint, help);
-        lv_label_set_long_mode(hint, LV_LABEL_LONG_WRAP);
-        lv_obj_set_width(hint, LV_PCT(100));
-        lv_obj_set_style_text_font(hint, theme::uiFontSmall(), 0);
-        lv_obj_set_style_text_color(hint, theme::textDim(), 0);
-    }
+    lv_label_set_text(title, (String(icon) + "   " + label).c_str());
+    lv_obj_set_style_text_font(title, theme::uiFontTiny(), 0);
 
     lv_obj_add_event_cb(row, [](lv_event_t* event) {
         reinterpret_cast<void(*)()>(lv_event_get_user_data(event))();
     }, LV_EVENT_CLICKED, reinterpret_cast<void*>(onClick));
 }
 
-// `intoSection` distinguishes the two screens: inside a section the back
-// button returns to the section list, at the root it leaves the app. There is
-// always one, because the root having no way out but an undiscoverable
-// trackball hold is how people get stranded in here.
-void makeHeader(const String& title, bool intoSection) {
+// One navigation row: icon, title, optional second line, chevron. Used for
+// both the group list and the section list so the two levels look alike.
+lv_obj_t* addNavRow(const char* icon, const char* title, const char* blurb) {
+    lv_obj_t* row = lv_obj_create(s_list);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, LV_PCT(100), LV_SIZE_CONTENT);
+    theme::styleRowCompact(row);
+    lv_obj_set_clickable(row, true);
+    lv_obj_set_scrollable(row, false);
+    lv_group_add_obj(input::group(), row);
+
+    // A flex row of two: the text stack, which grows, and the chevron, which
+    // gets pushed to the right edge by that growth. The chevron cannot simply
+    // be aligned right - flex positions its children itself and would stack it
+    // underneath the text instead.
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(row, 6, 0);
+
+    lv_obj_t* stack = lv_obj_create(row);
+    lv_obj_remove_style_all(stack);
+    lv_obj_set_height(stack, LV_SIZE_CONTENT);
+    lv_obj_set_flex_grow(stack, 1);
+    lv_obj_set_flex_flow(stack, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(stack, 2, 0);
+    lv_obj_set_scrollable(stack, false);
+
+    lv_obj_t* titleLabel = lv_label_create(stack);
+    lv_label_set_text(titleLabel,
+                      icon ? (String(icon) + "   " + title).c_str() : title);
+    lv_obj_set_style_text_font(titleLabel, theme::uiFontTiny(), 0);
+    lv_obj_set_style_text_color(titleLabel, theme::text(), 0);
+
+    if (blurb) {
+        lv_obj_t* blurbLabel = lv_label_create(stack);
+        lv_label_set_text(blurbLabel, blurb);
+        lv_label_set_long_mode(blurbLabel, LV_LABEL_LONG_DOT);
+        lv_obj_set_width(blurbLabel, LV_PCT(100));
+        lv_obj_set_style_text_font(blurbLabel, theme::uiFontTiny(), 0);
+        lv_obj_set_style_text_color(blurbLabel, theme::textDim(), 0);
+    }
+
+    lv_obj_t* chevron = lv_label_create(row);
+    lv_label_set_text(chevron, LV_SYMBOL_RIGHT);
+    lv_obj_set_style_text_font(chevron, theme::uiFontTiny(), 0);
+    lv_obj_set_style_text_color(chevron, theme::textDim(), 0);
+
+    return row;
+}
+
+// The back button does something different at each level, so it is handed the
+// action rather than guessing from state. There is always one, because a
+// screen whose only way out is an undiscoverable trackball hold is how people
+// get stranded in here.
+void makeHeader(const String& title, void (*onBack)()) {
     lv_obj_clean(s_header);
 
     lv_obj_t* back = lv_button_create(s_header);
     lv_obj_set_size(back, 36, 26);
-    lv_obj_set_style_bg_color(back, lv_color_hex(theme::kSurfaceAlt), 0);
+    lv_obj_set_style_bg_color(back, theme::surfaceAlt(), 0);
     lv_obj_set_style_radius(back, 5, 0);
     lv_obj_align(back, LV_ALIGN_LEFT_MID, 0, 0);
 
@@ -338,116 +594,111 @@ void makeHeader(const String& title, bool intoSection) {
     lv_obj_center(label);
     lv_group_add_obj(input::group(), back);
 
-    if (intoSection) {
-        lv_obj_add_event_cb(back, [](lv_event_t*) { showSections(); },
-                            LV_EVENT_CLICKED, nullptr);
-    } else {
-        lv_obj_add_event_cb(back, [](lv_event_t*) { ui::back(); },
-                            LV_EVENT_CLICKED, nullptr);
-    }
+    lv_obj_add_event_cb(back, [](lv_event_t* event) {
+        reinterpret_cast<void(*)()>(lv_event_get_user_data(event))();
+    }, LV_EVENT_CLICKED, reinterpret_cast<void*>(onBack));
 
-    lv_obj_t* title_label = lv_label_create(s_header);
-    lv_label_set_text(title_label, title.c_str());
-    lv_obj_set_style_text_font(title_label, theme::uiFont(), 0);
-    lv_obj_set_style_text_color(title_label, theme::accent(), 0);
-    lv_obj_align(title_label, LV_ALIGN_LEFT_MID, 44, 0);
+    lv_obj_t* titleLabel = lv_label_create(s_header);
+    lv_label_set_text(titleLabel, title.c_str());
+    lv_obj_set_style_text_font(titleLabel, theme::uiFontTiny(), 0);
+    lv_obj_set_style_text_color(titleLabel, theme::accent(), 0);
+    lv_obj_align(titleLabel, LV_ALIGN_LEFT_MID, 44, 0);
 }
 
-void showSections() {
+void groupEventCb(lv_event_t* event) {
+    showGroup(String(static_cast<const char*>(lv_event_get_user_data(event))));
+}
+
+void sectionEventCb(lv_event_t* event) {
+    showSection(String(static_cast<const char*>(lv_event_get_user_data(event))));
+}
+
+void showGroups() {
+    s_group   = "";
     s_section = "";
-    const bool irc = strcmp(s_group, settings::kGroupIrc) == 0;
-    makeHeader(irc ? "IRC settings" : "Settings", false);
+    makeHeader("Settings", [] { ui::back(); });
 
     lv_obj_clean(s_list);
 
-    // A couple of things are not single values, so they get their own screens
-    // rather than a row in the generic list.
-    if (irc) {
-        addShortcutRow(LV_SYMBOL_LIST "  Channels",
-                       "Auto-join list, keys and per-channel retry",
-                       [] { ui::openApp(ui::AppId::Channels); });
+    for (const MenuGroup& group : kMenu) {
+        lv_obj_t* row = addNavRow(group.icon, group.title, nullptr);
+        lv_obj_add_event_cb(row, groupEventCb, LV_EVENT_CLICKED,
+                            const_cast<char*>(group.title));
     }
-
-    for (const char* section : settings::sections(s_group)) {
-        lv_obj_t* row = lv_obj_create(s_list);
-        lv_obj_remove_style_all(row);
-        lv_obj_set_size(row, LV_PCT(100), LV_SIZE_CONTENT);
-        theme::styleRow(row);
-        lv_obj_set_clickable(row, true);
-        lv_obj_set_scrollable(row, false);
-        lv_group_add_obj(input::group(), row);
-
-        lv_obj_t* label = lv_label_create(row);
-        lv_label_set_text(label, section);
-        lv_obj_align(label, LV_ALIGN_LEFT_MID, 0, 0);
-
-        lv_obj_t* chevron = lv_label_create(row);
-        lv_label_set_text(chevron, LV_SYMBOL_RIGHT);
-        lv_obj_set_style_text_color(chevron, theme::textDim(), 0);
-        lv_obj_align(chevron, LV_ALIGN_RIGHT_MID, 0, 0);
-
-        lv_obj_add_event_cb(row, sectionEventCb, LV_EVENT_CLICKED,
-                            const_cast<char*>(section));
-    }
-
-    // A reset row at the bottom, because a settings screen this large needs one.
-    if (irc) return;
-
-    lv_obj_t* reset = lv_obj_create(s_list);
-    lv_obj_remove_style_all(reset);
-    lv_obj_set_size(reset, LV_PCT(100), LV_SIZE_CONTENT);
-    theme::styleRow(reset);
-    lv_obj_set_style_bg_color(reset, lv_color_hex(0x3A1520), 0);
-    lv_obj_set_clickable(reset, true);
-    lv_group_add_obj(input::group(), reset);
-
-    lv_obj_t* resetLabel = lv_label_create(reset);
-    lv_label_set_text(resetLabel, LV_SYMBOL_TRASH "  Factory reset");
-    lv_obj_set_style_text_color(resetLabel, lv_color_hex(theme::kDanger), 0);
-    lv_obj_align(resetLabel, LV_ALIGN_LEFT_MID, 0, 0);
-
-    lv_obj_add_event_cb(reset, [](lv_event_t*) {
-        static const char* buttons[] = {"Cancel", "Erase", nullptr};
-        lv_obj_t* box = lv_msgbox_create(nullptr);
-        lv_msgbox_add_title(box, "Factory reset");
-        lv_msgbox_add_text(box, "Erase every setting and reboot?");
-        lv_msgbox_add_close_button(box);
-        LV_UNUSED(buttons);
-
-        lv_obj_t* erase = lv_msgbox_add_footer_button(box, "Erase");
-        lv_obj_add_event_cb(erase, [](lv_event_t*) {
-            settings::factoryReset();
-            delay(200);
-            ESP.restart();
-        }, LV_EVENT_CLICKED, nullptr);
-
-        lv_obj_t* cancel = lv_msgbox_add_footer_button(box, "Cancel");
-        lv_obj_add_event_cb(cancel, [](lv_event_t* event) {
-            lv_msgbox_close(static_cast<lv_obj_t*>(lv_event_get_user_data(event)));
-        }, LV_EVENT_CLICKED, box);
-    }, LV_EVENT_CLICKED, nullptr);
 }
 
-void showSection(const String& section) {
-    s_section = section;
-    makeHeader(section, true);
+void showGroup(const String& groupTitle) {
+    const MenuGroup* group = findGroup(groupTitle);
+    if (group == nullptr) { showGroups(); return; }
+
+    // Nothing to show but a single section: go straight to the values rather
+    // than making someone tap through a screen with one row on it.
+    if (groupIsPassthrough(*group)) {
+        s_group = groupTitle;
+        showSection(String(group->sections[0]));
+        return;
+    }
+
+    s_group   = groupTitle;
+    s_section = "";
+    makeHeader(groupTitle, [] { showGroups(); });
 
     lv_obj_clean(s_list);
 
-    // Typing an SSID by hand is miserable, so offer the scanner right here.
-    if (section == "WiFi") {
-        addShortcutRow(LV_SYMBOL_REFRESH "  Scan for networks",
-                       "Pick a network instead of typing its name",
-                       [] { ui::openApp(ui::AppId::Wifi); });
+    // One section plus a few shortcuts is not worth a sub-menu: put the values
+    // straight on this screen. Burying three settings behind an "Advanced" row
+    // inside "System" was a level of nesting that earned nothing.
+    const bool single = group->sections[0] != nullptr && group->sections[1] == nullptr;
+
+    if (single) {
+        addSettingRows(String(group->sections[0]));
+    } else {
+        for (const char* const* name = group->sections; *name; name++) {
+            lv_obj_t* row = addNavRow(nullptr, *name, nullptr);
+            lv_obj_add_event_cb(row, sectionEventCb, LV_EVENT_CLICKED,
+                                const_cast<char*>(*name));
+        }
     }
 
+    if (groupTitle == "IRC") {
+        addShortcutRow(LV_SYMBOL_LIST, "Channels",
+                       [] { ui::openApp(ui::AppId::Channels); });
+    } else if (groupTitle == "WiFi") {
+        // The one and only way into the network screen. It used to be reachable
+        // from three separate rows in this menu.
+        addShortcutRow(LV_SYMBOL_WIFI, "Networks",
+                       [] { ui::openApp(ui::AppId::Wifi); });
+    } else if (groupTitle == "System") {
+        addShortcutRow(LV_SYMBOL_FILE, "System log",
+                       [] { ui::openApp(ui::AppId::Syslog); });
+        addShortcutRow(LV_SYMBOL_EYE_OPEN, "About",
+                       [] { ui::openApp(ui::AppId::About); });
+
+        // No factory reset here. Wiping every setting is a big hammer to leave
+        // one mis-tap away in a menu, and the escape hatch still exists: hold
+        // W while the device boots - see checkRecoveryKey() in main.cpp.
+    }
+}
+
+// Back out of a section: to the group's own screen when it has one, otherwise
+// straight to the top, since a pass-through group has no screen to return to.
+void leaveSection() {
+    const MenuGroup* group = findGroup(s_group);
+    if (group != nullptr && !groupIsPassthrough(*group)) showGroup(s_group);
+    else                                                 showGroups();
+}
+
+// Appends every visible value in `section` to the current list. Shared by the
+// section screen and by group screens that show their values inline.
+void addSettingRows(const String& section) {
     for (const SettingDef& def : settings::defs()) {
         if (section != def.section) continue;
+        if (def.hidden) continue;
 
         lv_obj_t* row = lv_obj_create(s_list);
         lv_obj_remove_style_all(row);
         lv_obj_set_size(row, LV_PCT(100), LV_SIZE_CONTENT);
-        theme::styleRow(row);
+        theme::styleRowCompact(row);
         lv_obj_set_clickable(row, true);
         lv_obj_set_scrollable(row, false);
         lv_obj_set_flex_flow(row, LV_FLEX_FLOW_COLUMN);
@@ -461,14 +712,28 @@ void showSection(const String& section) {
 
         lv_obj_t* label = lv_label_create(top);
         lv_label_set_text(label, def.label);
-        lv_obj_set_style_text_font(label, theme::uiFont(), 0);
+        lv_obj_set_style_text_font(label, theme::uiFontTiny(), 0);
         lv_obj_align(label, LV_ALIGN_LEFT_MID, 0, 0);
 
         lv_obj_t* value = lv_label_create(top);
-        lv_obj_set_style_text_font(value, theme::uiFontSmall(), 0);
+        lv_obj_set_style_text_font(value, theme::uiFontTiny(), 0);
         lv_obj_align(value, LV_ALIGN_RIGHT_MID, 0, 0);
 
-        if (def.type == SettingType::Bool) {
+        if (def.type == SettingType::Color) {
+            // A hex string tells you nothing. Show the colour.
+            lv_label_set_text(value, "");
+            lv_obj_t* chip = lv_obj_create(top);
+            lv_obj_remove_style_all(chip);
+            lv_obj_set_size(chip, 30, 16);
+            lv_obj_set_style_bg_color(
+                chip, lv_color_hex(static_cast<uint32_t>(settings::getInt(def.key))), 0);
+            lv_obj_set_style_bg_opa(chip, LV_OPA_COVER, 0);
+            lv_obj_set_style_radius(chip, 4, 0);
+            lv_obj_set_style_border_color(chip, theme::border(), 0);
+            lv_obj_set_style_border_width(chip, 1, 0);
+            lv_obj_set_scrollable(chip, false);
+            lv_obj_align(chip, LV_ALIGN_RIGHT_MID, 0, 0);
+        } else if (def.type == SettingType::Bool) {
             const bool on = settings::getBool(def.key);
             lv_label_set_text(value, on ? LV_SYMBOL_OK "  on" : "off");
             lv_obj_set_style_text_color(value, on ? theme::accent() : theme::textDim(), 0);
@@ -481,18 +746,27 @@ void showSection(const String& section) {
             lv_obj_set_style_text_color(value, theme::textDim(), 0);
         }
 
-        if (def.help) {
-            lv_obj_t* help = lv_label_create(row);
-            lv_label_set_text(help, def.help);
-            lv_label_set_long_mode(help, LV_LABEL_LONG_WRAP);
-            lv_obj_set_width(help, LV_PCT(100));
-            lv_obj_set_style_text_font(help, theme::uiFontSmall(), 0);
-            lv_obj_set_style_text_color(help, lv_color_hex(theme::kTextFaint), 0);
-        }
+        // No help line under the row. The explanation still appears in the
+        // editor, where you are actually deciding something; here it just made
+        // every list three times taller than it needed to be.
 
         lv_obj_add_event_cb(row, rowEventCb, LV_EVENT_CLICKED,
                             const_cast<SettingDef*>(&def));
     }
+}
+
+void showSection(const String& section) {
+    s_section = section;
+    makeHeader(section, [] { leaveSection(); });
+
+    lv_obj_clean(s_list);
+    addSettingRows(section);
+}
+
+void refreshCurrentList() {
+    if (!s_section.isEmpty())    showSection(s_section);
+    else if (!s_group.isEmpty()) showGroup(s_group);
+    else                         showGroups();
 }
 
 bool keyHook(uint32_t key) {
@@ -503,11 +777,6 @@ bool keyHook(uint32_t key) {
 
 } // namespace
 
-void createIrc(lv_obj_t* parent) {
-    s_group = settings::kGroupIrc;
-    create(parent);
-}
-
 void create(lv_obj_t* parent) {
     s_page = lv_obj_create(parent);
     lv_obj_remove_style_all(s_page);
@@ -516,6 +785,9 @@ void create(lv_obj_t* parent) {
     lv_obj_set_style_pad_all(s_page, 6, 0);
     lv_obj_set_style_pad_row(s_page, 6, 0);
     lv_obj_set_scrollable(s_page, false);
+    // Inherited by everything on the page that does not set its own font:
+    // buttons, text fields and the back arrow.
+    lv_obj_set_style_text_font(s_page, theme::uiFontTiny(), 0);
 
     s_header = lv_obj_create(s_page);
     lv_obj_remove_style_all(s_header);
@@ -532,7 +804,7 @@ void create(lv_obj_t* parent) {
     lv_obj_set_scrollbar_mode(s_list, LV_SCROLLBAR_MODE_AUTO);
 
     input::setKeyHook(keyHook);
-    showSections();
+    showGroups();
 }
 
 void destroy() {
@@ -541,15 +813,18 @@ void destroy() {
     s_page    = nullptr;
     s_header  = nullptr;
     s_list    = nullptr;
+    s_group   = "";
     s_section = "";
-    s_group   = settings::kGroupSystem;   // the IRC entry point re-arms it
 }
 
 void tick() {}
 
 bool handleBack() {
+    // Unwinds one level per press: editor, then section, then group, and only
+    // then does it hand back to ui::back() to leave settings altogether.
     if (s_editor) { closeEditor(); return true; }
-    if (!s_section.isEmpty()) { showSections(); return true; }
+    if (!s_section.isEmpty()) { leaveSection(); return true; }
+    if (!s_group.isEmpty())   { showGroups();   return true; }
     return false;
 }
 

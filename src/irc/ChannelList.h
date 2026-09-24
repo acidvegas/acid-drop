@@ -30,7 +30,6 @@ IrcChannelConfig* find(const String& name);
 size_t add(const IrcChannelConfig& channel);   // index of the new entry
 void   update(size_t index, const IrcChannelConfig& channel);
 void   remove(size_t index);
-void   moveUp(size_t index);
 
 // Records a channel joined at runtime so it comes back after a reconnect.
 void rememberJoin(const String& name, const String& key);

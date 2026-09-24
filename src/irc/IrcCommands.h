@@ -31,7 +31,7 @@ struct Context {
 // that the caller should send as a message.
 bool run(const String& line, const Context& context);
 
-// The text /help prints, as a nullptr-terminated list of lines.
-const char* const* helpText();
+// Every command the client understands, nullptr-terminated, for completion.
+const char* const* commandNames();
 
 } // namespace irccmd

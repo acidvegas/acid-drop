@@ -27,13 +27,11 @@ void setLevel(LogLevel level);
 
 // Whether to keep the ring buffer the on-device syslog reads from.
 void setKeepHistory(bool keep);
-LogLevel level();
 
 void write(LogLevel level, const char* tag, const char* fmt, ...);
 
 // Newest last. Capped at kMaxEntries.
 const std::vector<LogEntry>& entries();
-void clear();
 
 // Re-prints the whole ring buffer to serial.
 //
@@ -41,10 +39,8 @@ void clear();
 // terminal is attached - so everything logged during boot is lost unless a
 // monitor happened to be connected at the time, and attaching one tends to
 // reset the board. Calling this when a host turns up replays what was missed.
-void replay();
 
 // Called whenever a line is appended, so the syslog app can refresh.
-void onAppend(void (*cb)(const LogEntry&));
 
 } // namespace logging
 

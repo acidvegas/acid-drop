@@ -172,6 +172,14 @@ void TermView::create(lv_obj_t* parent) {
     lv_obj_add_event_cb(m_obj, drawEventCb, LV_EVENT_DRAW_MAIN, this);
     lv_obj_add_event_cb(m_obj, geometryEventCb, LV_EVENT_SIZE_CHANGED, this);
 
+    // The view outlives its widget: the IRC screen is torn down with
+    // lv_obj_clean() while this object is a file-scope global, so without this
+    // m_obj would keep pointing at freed memory and the next setter to touch
+    // it would corrupt the heap.
+    lv_obj_add_event_cb(m_obj, [](lv_event_t* event) {
+        static_cast<TermView*>(lv_event_get_user_data(event))->m_obj = nullptr;
+    }, LV_EVENT_DELETE, this);
+
     recomputeGeometry();
 }
 
@@ -220,12 +228,6 @@ void TermView::setFormatOptions(const FormatOptions& options) {
     refresh();
 }
 
-void TermView::setWordWrap(bool enabled) {
-    if (m_wordWrap == enabled) return;
-    m_wordWrap = enabled;
-    refresh();
-}
-
 void TermView::refresh() {
     if (m_doc) m_doc->invalidate();
     if (m_obj) lv_obj_invalidate(m_obj);
@@ -268,8 +270,6 @@ void TermView::scrollToBottom() {
     if (m_obj) lv_obj_invalidate(m_obj);
 }
 
-void TermView::scrollPageUp()   { scrollRows(m_visibleRows > 1 ? m_visibleRows - 1 : 1); }
-void TermView::scrollPageDown() { scrollRows(-(m_visibleRows > 1 ? m_visibleRows - 1 : 1)); }
 
 bool TermView::atBottom() const { return !m_doc || m_doc->stickToBottom; }
 

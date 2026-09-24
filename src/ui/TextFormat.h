@@ -67,4 +67,9 @@ void wrap(const std::vector<TermCell>& cells, uint16_t columns, uint8_t indent,
 // Strips every control code, for logging and for nick matching.
 String strip(const String& text);
 
+// The mIRC palette index a nick is drawn in. Hashed, so a nick keeps the same
+// colour across sessions and devices - and so the IRC client and the WeeChat
+// relay colour the same person identically.
+uint8_t nickColorIndex(const String& nick);
+
 } // namespace textfmt

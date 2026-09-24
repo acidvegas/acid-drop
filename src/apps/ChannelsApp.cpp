@@ -158,7 +158,7 @@ void openEditor(size_t index) {
     }
 
     lv_obj_t* cancel = lv_button_create(buttons);
-    lv_obj_set_style_bg_color(cancel, lv_color_hex(theme::kSurfaceAlt), 0);
+    lv_obj_set_style_bg_color(cancel, theme::surfaceAlt(), 0);
     lv_obj_t* cancelLabel = lv_label_create(cancel);
     lv_label_set_text(cancelLabel, "Cancel");
     lv_obj_center(cancelLabel);
@@ -169,7 +169,7 @@ void openEditor(size_t index) {
     lv_obj_set_style_bg_color(save, theme::accent(), 0);
     lv_obj_t* saveLabel = lv_label_create(save);
     lv_label_set_text(saveLabel, "Save");
-    lv_obj_set_style_text_color(saveLabel, lv_color_hex(theme::kBackground), 0);
+    lv_obj_set_style_text_color(saveLabel, theme::background(), 0);
     lv_obj_center(saveLabel);
     lv_group_add_obj(input::group(), save);
     lv_obj_add_event_cb(save, [](lv_event_t*) { saveEditor(); }, LV_EVENT_CLICKED, nullptr);
@@ -197,7 +197,7 @@ void rebuild() {
     lv_obj_remove_style_all(add);
     lv_obj_set_size(add, LV_PCT(100), LV_SIZE_CONTENT);
     theme::styleRow(add);
-    lv_obj_set_style_bg_color(add, lv_color_hex(theme::kAccentDim), 0);
+    lv_obj_set_style_bg_color(add, theme::accentDim(), 0);
     lv_obj_set_clickable(add, true);
     lv_obj_set_scrollable(add, false);
     lv_group_add_obj(input::group(), add);

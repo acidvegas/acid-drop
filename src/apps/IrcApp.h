@@ -16,6 +16,11 @@ void onBufferChanged(IrcBuffer& buffer);
 void onBufferListChanged();
 void onIrcStateChanged(IrcState state);
 
+// The relay equivalents. This screen renders either source, so both funnel
+// into the same redraw rather than each having their own path through it.
+void onWindowContentChanged();
+void onRelayStateChanged();
+
 // Re-reads fonts, colours and timestamp settings.
 void applySettings();
 

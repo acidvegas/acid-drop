@@ -3,7 +3,6 @@
 #include <esp_chip_info.h>
 #include <esp_mac.h>
 
-#include "board/Gps.h"
 #include "board/Input.h"
 #include "board/Power.h"
 #include "core/Log.h"
@@ -91,6 +90,8 @@ void tick() {
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 
     String text;
+    text += "ACID DROP " + String(ACID_VERSION) + "\n";
+    text += "Built     " + String(__DATE__) + "\n\n";
     text += "Board     " + String(ACID_BOARD_TDECK_PLUS ? "T-Deck Plus" : "T-Deck") + "\n";
     text += "MCU       ESP32-S3 rev " + String(chip.revision) + ", " +
             String(chip.cores) + " cores @ " + String(getCpuFrequencyMhz()) + " MHz\n";
@@ -108,7 +109,6 @@ void tick() {
     text += "WiFi      " + (net::isConnected()
                             ? net::ssid() + " / " + net::ipAddress()
                             : String("not connected")) + "\n";
-    text += "GPS       " + gps::summary() + "\n";
     text += "\n";
     text += "IRC       " + ui::irc().stateText() + "\n";
     text += "Server    " + settings::getText("irc_server") + ":" +
@@ -117,14 +117,15 @@ void tick() {
     text += "Nick      " + ui::irc().nick() + "\n";
     text += "Windows   " + String(ui::irc().bufferCount()) + "\n";
 
-    if (settings::getBool("dev_mode")) {
-        text += "\nDeveloper\n";
-        text += "Free heap  " + formatBytes(ESP.getFreeHeap()) + "\n";
-        text += "Min free   " + formatBytes(ESP.getMinFreeHeap()) + "\n";
-        text += "Largest    " + formatBytes(ESP.getMaxAllocHeap()) + "\n";
-        text += "Free PSRAM " + formatBytes(ESP.getFreePsram()) + "\n";
-        text += "Log lines  " + String(logging::entries().size()) + "\n";
-    }
+    // Always shown now. This is the About screen - reporting how much memory
+    // is left is the whole job, and hiding it behind a toggle meant the one
+    // place that answers "is it running out of heap" was off by default.
+    text += "\nMemory\n";
+    text += "Free heap  " + formatBytes(ESP.getFreeHeap()) + "\n";
+    text += "Min free   " + formatBytes(ESP.getMinFreeHeap()) + "\n";
+    text += "Largest    " + formatBytes(ESP.getMaxAllocHeap()) + "\n";
+    text += "Free PSRAM " + formatBytes(ESP.getFreePsram()) + "\n";
+    text += "Log lines  " + String(logging::entries().size()) + "\n";
 
     lv_label_set_text(s_body, text.c_str());
 }

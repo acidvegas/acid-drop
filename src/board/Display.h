@@ -35,13 +35,10 @@ bool begin();
 
 // 0-255. Ramps rather than stepping so it does not flash.
 void setBrightness(uint8_t value);
-uint8_t brightness();
 
 // Backlight off but the panel and LVGL stay alive, so the UI keeps updating.
 void sleep();
 void wake();
-bool isAwake();
 
-lv_display_t* lvDisplay();
 
 } // namespace display

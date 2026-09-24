@@ -102,6 +102,7 @@ void loop() {
         if (s_screenOn) {
             s_screenOn = false;
             display::sleep();
+            input::setKeyboardBacklight(0);
         }
         return;
     }
@@ -110,19 +111,26 @@ void loop() {
         if (!s_dimmed && s_screenOn) {
             s_dimmed = true;
             display::setBrightness(s_dimLevel);
+            // Off rather than dimmed: a lit keyboard under a dimmed screen
+            // looks like the device is still awake, and it is the part of this
+            // board that actually costs current.
+            input::setKeyboardBacklight(0);
         }
         return;
     }
 
-    // Back inside the active window.
+    // Back inside the active window. Each branch is a transition, so the
+    // keyboard is written once rather than on every pass of the loop.
     if (!s_screenOn) {
         s_screenOn = true;
         display::setBrightness(s_brightness);
         display::wake();
+        input::applyKeyboardBacklight();
     }
     if (s_dimmed) {
         s_dimmed = false;
         display::setBrightness(s_brightness);
+        input::applyKeyboardBacklight();
     }
 }
 
@@ -144,11 +152,13 @@ bool probablyCharging() {
 
 void wake() {
     input::noteActivity();
+    const bool wasAsleep = !s_screenOn || s_dimmed;
     if (!s_screenOn) {
         s_screenOn = true;
         display::wake();
     }
     s_dimmed = false;
+    if (wasAsleep) input::applyKeyboardBacklight();
 
     // Read the setting rather than a cached copy: anything that changed the
     // brightness live (the shade slider) would otherwise be undone from here.
@@ -156,6 +166,5 @@ void wake() {
     display::setBrightness(s_brightness);
 }
 
-bool screenOn() { return s_screenOn; }
 
 } // namespace power

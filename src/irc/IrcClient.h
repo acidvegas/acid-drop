@@ -9,6 +9,11 @@
 #include "irc/IrcMessage.h"
 #include "ui/TermView.h"
 
+// How this firmware introduces itself: the quit message, the part message and
+// the real name are all this, and none of them is configurable. The username
+// is fixed too. These say what the client is, not who is using it.
+constexpr const char* kIrcSignature = "ACID-DROP https://github.com/acidvegas/acid-drop";
+
 enum class IrcState : uint8_t {
     Offline,        // not wanted, or WiFi is down
     Connecting,     // TCP/TLS handshake in flight
@@ -24,25 +29,6 @@ enum class BufferKind : uint8_t {
     Query,    // private message window
 };
 
-// How a line should be coloured. Kept out of the text itself so filters like
-// "hide joins and parts" stay cheap.
-enum LineKind : uint8_t {
-    LINE_MESSAGE = 0,
-    LINE_ACTION,
-    LINE_NOTICE,
-    LINE_JOIN,
-    LINE_PART,
-    LINE_QUIT,
-    LINE_KICK,
-    LINE_NICK,
-    LINE_MODE,
-    LINE_TOPIC,
-    LINE_SERVER,
-    LINE_ERROR,
-    LINE_LOCAL,     // our own status text
-    LINE_RAW,
-};
-
 struct IrcBuffer {
     String     name;          // "#chan", a nick, or "" for the status window
     BufferKind kind = BufferKind::Status;
@@ -53,13 +39,19 @@ struct IrcBuffer {
     bool                retryEnabled = true;   // from the saved channel config
     bool                requested    = false;  // we asked to be here
     bool                namesLoading = false;  // mid RPL_NAMREPLY batch
+    // While this is in the future, the replies to an info request are folded
+    // into the window's state without also being printed. Opening the channel
+    // details asks the server for MODE, TOPIC and NAMES, and without this all
+    // three answers bleed into the backlog the moment the panel is closed.
+    uint32_t            infoQuietUntil = 0;
+
     uint32_t            retryAt     = 0;   // millis, 0 when nothing is pending
     uint16_t            retryCount  = 0;
     String              retryReason;       // e.g. "+i", shown while retrying
     String              key;               // channel key, when one is known
     String              topic;
     String              modes;             // from RPL_CHANNELMODEIS
-    std::vector<String> nicks;
+    std::vector<IrcNick> nicks;
 
     bool isStatus() const  { return kind == BufferKind::Status; }
     bool isChannel() const { return kind == BufferKind::Channel; }
@@ -93,6 +85,10 @@ public:
     void action(const String& target, const String& text);
     void notice(const String& target, const String& text);
 
+    // Asks the server for a channel's modes, topic and members, without the
+    // answers being printed into the window.
+    void requestChannelInfo(const String& channel);
+
     void join(const String& channel, const String& key = String());
     void part(const String& channel, const String& reason = String());
     void setNick(const String& nick);
@@ -106,6 +102,13 @@ public:
     bool       closeBuffer(size_t index);   // false for the status window
 
     const String& nick() const { return m_nick; }
+
+    // True when the user deliberately went offline; auto-connect respects it.
+    bool userQuit() const { return m_userQuit; }
+
+    // The mIRC palette index this nick is drawn in, so the nick list can use
+    // the same colour the messages do.
+    uint8_t nickColorIndex(const String& nick) const;
 
     // Applies anything the settings screen may have changed.
     void applySettings();
@@ -133,7 +136,8 @@ private:
 
     void handleNumeric(const IrcMessage& message);
     void handlePrivmsg(const IrcMessage& message, bool isNotice);
-    void handleCtcp(const IrcMessage& message, const String& target, String payload);
+    void handleCtcp(const IrcMessage& message, const String& target, String payload,
+                    bool isNotice);
     void handleJoin(const IrcMessage& message);
     void handlePart(const IrcMessage& message);
     void handleKick(const IrcMessage& message);
@@ -151,6 +155,9 @@ private:
     void addLine(IrcBuffer& target, const String& text, uint8_t kind, bool highlight = false);
     void addStatus(const String& text, uint8_t kind = LINE_SERVER);
     bool isHighlight(const String& text) const;
+    // True when this sender is on the ignore list, so nothing they send is
+    // shown and no window is opened for them.
+    bool isIgnored(const IrcMessage& message) const;
     String colorForNick(const String& nick) const;
     String formatNick(const String& nick) const;
     uint32_t lineStamp(const IrcMessage& message) const;
@@ -166,10 +173,16 @@ private:
     std::vector<void*> m_orphanedJobs;
     bool     m_usingTls        = false;
     bool     m_triedTlsAlready = false;   // drives the plaintext fallback
+    bool     m_verifying       = false;   // this attempt checks the certificate
+    bool     m_waitingForClock = false;   // said so once already
     String   m_rxBuffer;
 
     IrcState m_state = IrcState::Offline;
     bool     m_wantConnection = false;
+    // Set by an explicit /quit or /disconnect, cleared by an explicit connect.
+    // Auto-connect honours it, so "disconnect" does not mean "disconnect for
+    // two seconds".
+    bool     m_userQuit        = false;
 
     // --- identity ---
     // Last address the server name resolved to. DNS on a flaky link fails
@@ -179,6 +192,9 @@ private:
 
     String m_nick;
     uint8_t m_nickAttempt = 0;
+
+    // Parsed once in applySettings() rather than split on every line.
+    std::vector<String> m_ignores;
 
     // --- timers (all millis) ---
     uint32_t m_connectStartedAt = 0;
@@ -211,6 +227,10 @@ private:
         bool     rejoinOnKick     = true;
         bool     retryFailedJoins = true;
         bool     showJoinPart     = true;
+        // Hides everything that is not someone talking - joins, parts, quits,
+        // modes, topics, nick changes and other people's kicks. Things that
+        // happened to you are never hidden.
+        bool     filterMode        = false;
         bool     showModes        = true;
         bool     showRaw          = false;
         bool     allowCtcp        = true;
