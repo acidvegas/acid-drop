@@ -2,17 +2,17 @@
 
 // LilyGo T-Deck / T-Deck Plus (ESP32-S3FN16R8)
 //
-// The Plus adds an on-board L76K GNSS module on Serial1 and a larger battery.
-// Everything else is pin-identical, so ACID_BOARD_TDECK_PLUS only gates GPS.
-
-#ifndef ACID_BOARD_TDECK_PLUS
-#define ACID_BOARD_TDECK_PLUS 1
-#endif
+// Only what this firmware actually drives is listed. The board also carries an
+// L76K GNSS module, an SX1262 LoRa radio, an ES7210 microphone codec and a
+// microSD slot; none of them is used, so their pins are not defined here. The
+// two exceptions are the SD and LoRa chip-selects, which still have to be
+// parked high so a floating select cannot make either device answer traffic
+// meant for the display - see parkUnusedSpiDevices() in main.cpp.
 
 // Power ------------------------------------------------------------------------------------------
 #define BOARD_POWERON        10  // Master enable for the peripheral rail
 
-// I2C bus (keyboard, touch, ES7210) --------------------------------------------------------------
+// I2C bus (keyboard, touch) ----------------------------------------------------------------------
 #define BOARD_I2C_SDA        18
 #define BOARD_I2C_SCL        8
 #define BOARD_I2C_FREQ       400000
@@ -49,28 +49,13 @@
 // SD card ----------------------------------------------------------------------------------------
 #define BOARD_SDCARD_CS      39
 
-// LoRa (SX1262) ----------------------------------------------------------------------------------
+// LoRa (SX1262) - chip-select only, purely so it can be parked high ------------------------------
 #define RADIO_CS_PIN         9
-#define RADIO_BUSY_PIN       13
-#define RADIO_RST_PIN        17
-#define RADIO_DIO1_PIN       45
-#define RADIO_FREQ_DEFAULT   915.0f
-
-// GNSS (L76K, T-Deck Plus only) ------------------------------------------------------------------
-#define BOARD_GPS_RX         44  // ESP32 RX  <- GPS TX
-#define BOARD_GPS_TX         43  // ESP32 TX  -> GPS RX
-#define BOARD_GPS_BAUD       9600
 
 // Audio out (MAX98357 I2S) -----------------------------------------------------------------------
 #define BOARD_I2S_WS         5
 #define BOARD_I2S_DOUT       6
 #define BOARD_I2S_BCK        7
-
-// Audio in (ES7210) ------------------------------------------------------------------------------
-#define BOARD_ES7210_MCLK    48
-#define BOARD_ES7210_LRCK    21
-#define BOARD_ES7210_SCK     47
-#define BOARD_ES7210_DIN     14
 
 // Battery ----------------------------------------------------------------------------------------
 #define BOARD_BAT_ADC        4

@@ -2,9 +2,7 @@
 
 #include "apps/AboutApp.h"
 #include "apps/ChannelsApp.h"
-#include "apps/GpsApp.h"
 #include "apps/IrcApp.h"
-#include "apps/Launcher.h"
 #include "apps/SettingsApp.h"
 #include "apps/SyslogApp.h"
 #include "apps/WifiApp.h"
@@ -15,6 +13,8 @@
 #include "core/Settings.h"
 #include "irc/ChannelList.h"
 #include "irc/IrcClient.h"
+#include "relay/WeechatRelay.h"
+#include "net/NetworkList.h"
 #include "net/WifiService.h"
 #include "ui/StatusBar.h"
 #include "ui/Theme.h"
@@ -29,10 +29,10 @@ lv_obj_t* s_content = nullptr;
 lv_obj_t* s_toast   = nullptr;
 uint32_t  s_toastUntil = 0;
 
-AppId              s_current = AppId::Launcher;
-bool               s_appBuilt = false;   // s_current has actually been created
-std::vector<AppId> s_stack;              // where back() goes, most recent last
-IrcClient          s_irc;
+AppId     s_current  = AppId::Irc;
+bool      s_appBuilt = false;   // s_current has actually been created
+IrcClient    s_irc;
+WeechatRelay s_relay;
 
 struct AppHooks {
     void (*create)(lv_obj_t*);
@@ -42,29 +42,67 @@ struct AppHooks {
 
 AppHooks hooksFor(AppId id) {
     switch (id) {
-        case AppId::Irc:         return {ircapp::create,       ircapp::destroy,      ircapp::tick};
-        case AppId::IrcSettings: return {settingsapp::createIrc, settingsapp::destroy, settingsapp::tick};
-        case AppId::Channels:    return {channelsapp::create,  channelsapp::destroy, channelsapp::tick};
-        case AppId::Settings:    return {settingsapp::create,  settingsapp::destroy, settingsapp::tick};
-        case AppId::Wifi:        return {wifiapp::create,      wifiapp::destroy,     wifiapp::tick};
-        case AppId::Gps:         return {gpsapp::create,       gpsapp::destroy,      gpsapp::tick};
-        case AppId::Syslog:      return {syslogapp::create,    syslogapp::destroy,   syslogapp::tick};
-        case AppId::About:       return {aboutapp::create,     aboutapp::destroy,    aboutapp::tick};
-        case AppId::Launcher:
-        default:                 return {launcher::create,     launcher::destroy,    launcher::tick};
+        case AppId::Settings: return {settingsapp::create, settingsapp::destroy, settingsapp::tick};
+        case AppId::Channels: return {channelsapp::create, channelsapp::destroy, channelsapp::tick};
+        case AppId::Wifi:     return {wifiapp::create,     wifiapp::destroy,     wifiapp::tick};
+        case AppId::Syslog:   return {syslogapp::create,   syslogapp::destroy,   syslogapp::tick};
+        case AppId::About:    return {aboutapp::create,    aboutapp::destroy,    aboutapp::tick};
+        case AppId::Irc:
+        default:              return {ircapp::create,      ircapp::destroy,      ircapp::tick};
     }
+}
+
+// Chat follows the network, always. It is what the device is for, so waiting
+// to be asked was never the right default - and a setting for it was a setting
+// for "do you want this firmware to do its job".
+void maybeAutoConnect() {
+    if (!net::isConnected()) return;
+
+    if (relayMode()) {
+        if (s_relay.userQuit()) return;        // they asked to be offline
+        if (s_relay.state() != RelayState::Offline) return;
+        if (settings::getText("relay_host").isEmpty()) return;
+
+        LOG_I(TAG, "network up, connecting to the relay");
+        s_relay.connect();
+        return;
+    }
+
+    if (s_irc.userQuit()) return;          // they asked to be offline
+    if (s_irc.state() != IrcState::Offline) return;
+    if (settings::getText("irc_nick").isEmpty()) return;
+
+    // Nothing to connect to yet. Which host that is depends on the mode.
+    const bool znc = chatMode() == ChatMode::Znc;
+    if (settings::getText(znc ? "znc_host" : "irc_server").isEmpty()) return;
+
+    LOG_I(TAG, "network up, connecting to %s", znc ? "ZNC" : "IRC");
+    s_irc.connect();
 }
 
 void wireNetworkCallbacks() {
     net::onConnectionChanged = [](bool connected) {
-        if (!connected) return;
-        if (!settings::getBool("irc_autoconn")) return;
+        if (connected) maybeAutoConnect();
+    };
+}
 
-        // Fresh network, fresh start: clear whatever backoff had built up.
-        if (s_irc.state() == IrcState::Offline || s_irc.state() == IrcState::Reconnecting) {
-            LOG_I(TAG, "network up, connecting to IRC");
-            s_irc.connect();
-        }
+void wireRelayCallbacks() {
+    s_relay.onStateChanged = [](RelayState state) {
+        LOG_I(TAG, "relay state: %d", static_cast<int>(state));
+        if (state == RelayState::Ready)        audio::alert(Alert::Connected);
+        if (state == RelayState::Reconnecting) audio::alert(Alert::Disconnected);
+        ircapp::onRelayStateChanged();
+    };
+
+    s_relay.onBufferChanged     = [](RelayBuffer&) { ircapp::onWindowContentChanged(); };
+    s_relay.onBufferListChanged = []               { ircapp::onBufferListChanged(); };
+
+    s_relay.onHighlight = [](const String& nick, const String& text, RelayBuffer& buffer) {
+        LV_UNUSED(text);
+        audio::alert(buffer.isChannel() ? Alert::Mention : Alert::PrivateMessage);
+        statusbar::setNotification(true);
+        power::wake();
+        LOG_I(TAG, "relay highlight from %s in %s", nick.c_str(), buffer.shortName.c_str());
     };
 }
 
@@ -110,7 +148,11 @@ void begin() {
 
     s_content = lv_obj_create(s_root);
     lv_obj_remove_style_all(s_content);
-    lv_obj_set_size(s_content, LV_PCT(100), contentHeight());
+    // Grows into whatever the status bar leaves, rather than being sized once
+    // against it. Hiding the bar used to leave the content 26px short, which
+    // showed up as a band of black below the input row.
+    lv_obj_set_width(s_content, LV_PCT(100));
+    lv_obj_set_flex_grow(s_content, 1);
     lv_obj_set_style_bg_color(s_content, theme::background(), 0);
     lv_obj_set_style_bg_opa(s_content, LV_OPA_COVER, 0);
     lv_obj_set_scrollable(s_content, false);
@@ -119,22 +161,34 @@ void begin() {
     input::setHoldHandler([] { home(); });
 
     channels::begin();
+    netlist::begin();
     LOG_I(TAG, "ui: irc");
     s_irc.begin();
+    s_relay.begin();
     wireIrcCallbacks();
+    wireRelayCallbacks();
     wireNetworkCallbacks();
 
-    // Where to land after boot.
-    const uint8_t bootApp = settings::getEnum("boot_app");
-    LOG_I(TAG, "ui: opening app (boot_app=%u)", bootApp);
-    openApp(bootApp == 1 ? AppId::Irc : AppId::Launcher);
-    LOG_I(TAG, "ui: app open");
-
-    if (settings::getBool("irc_autoconn")) s_irc.connect();
+    LOG_I(TAG, "ui: opening chat");
+    openApp(AppId::Irc);
+    LOG_I(TAG, "ui: chat open");
 }
 
 void loop() {
-    s_irc.loop();
+    // Only one of the two ever has a connection: relayMode() decides which,
+    // and the other sits idle rather than being torn down, so switching back
+    // does not lose its settings or its buffers.
+    if (relayMode()) s_relay.loop();
+    else             s_irc.loop();
+
+    // The association can come up without the callback firing - a reconnect
+    // by the supplicant, or a connection that was already live when this
+    // screen was built. Cheap enough to just check.
+    static uint32_t lastAutoCheck = 0;
+    if (millis() - lastAutoCheck > 2000) {
+        lastAutoCheck = millis();
+        maybeAutoConnect();
+    }
 
     hooksFor(s_current).tick();
 
@@ -153,23 +207,14 @@ void loop() {
 }
 
 void openApp(AppId id) {
-    // Re-opening the current app is a no-op, but only once it exists: at boot
-    // s_current is already Launcher and nothing has been built yet.
+    // Re-opening the current screen is a no-op, but only once it exists: at
+    // boot s_current is already Irc and nothing has been built yet.
     if (id == s_current && s_appBuilt) return;
-
-    // Remember where we came from, but never let the trail grow without bound
-    // and never record the launcher, which is the floor of the stack anyway.
-    if (s_appBuilt && s_current != AppId::Launcher) {
-        s_stack.push_back(s_current);
-        if (s_stack.size() > 4) s_stack.erase(s_stack.begin());
-    }
 
     if (s_appBuilt) {
         hooksFor(s_current).destroy();
         lv_obj_clean(s_content);
     }
-
-    statusbar::setTitle("");   // apps that want a title set one in create()
 
     s_current  = id;
     s_appBuilt = true;
@@ -179,28 +224,16 @@ void openApp(AppId id) {
 }
 
 void back() {
-    // The app may own a sub-screen it would rather close first.
-    if ((s_current == AppId::Settings || s_current == AppId::IrcSettings) &&
-        settingsapp::handleBack()) {
-        return;
-    }
+    // The screen may own a sub-screen it would rather close first.
+    if (s_current == AppId::Settings && settingsapp::handleBack()) return;
     if (s_current == AppId::Channels && channelsapp::handleBack()) return;
-    if (s_current == AppId::Launcher) return;
 
-    // Always the launcher. A stack meant that leaving Settings dropped you
-    // back into IRC rather than home, which is not what "back" looks like.
-    const AppId destination = AppId::Launcher;
-    s_stack.clear();
-
-    hooksFor(s_current).destroy();
-    lv_obj_clean(s_content);
-    statusbar::setTitle("");
-    s_current  = destination;
-    s_appBuilt = true;
-    hooksFor(destination).create(s_content);
+    // Everything returns to IRC, because IRC is the only root there is. That
+    // includes the settings screen reached from IRC's own gear button, which
+    // used to land on a home screen instead of back where it came from.
+    if (s_current == AppId::Irc) return;
+    openApp(AppId::Irc);
 }
-
-AppId currentApp() { return s_current; }
 
 lv_obj_t* content() { return s_content; }
 
@@ -212,7 +245,7 @@ lv_obj_t* createAppHeader(lv_obj_t* parent, const char* title) {
 
     lv_obj_t* backButton = lv_button_create(header);
     lv_obj_set_size(backButton, 34, 24);
-    lv_obj_set_style_bg_color(backButton, lv_color_hex(theme::kSurfaceAlt), 0);
+    lv_obj_set_style_bg_color(backButton, theme::surfaceAlt(), 0);
     lv_obj_set_style_radius(backButton, 5, 0);
     lv_obj_align(backButton, LV_ALIGN_LEFT_MID, 0, 0);
     lv_group_add_obj(input::group(), backButton);
@@ -231,21 +264,54 @@ lv_obj_t* createAppHeader(lv_obj_t* parent, const char* title) {
     return header;
 }
 
-void home() {
-    s_stack.clear();
-    openApp(AppId::Launcher);
+void home() { openApp(AppId::Irc); }
+
+void restyle() {
+    theme::reload();
+
+    // The screen background and the status bar are built once for the session,
+    // so they are re-coloured in place. Everything else belongs to the current
+    // screen, and a widget keeps whatever colour it was given at creation -
+    // so the only honest way to recolour it is to build it again.
+    lv_obj_set_style_bg_color(lv_screen_active(), theme::background(), 0);
+    lv_obj_set_style_bg_color(s_content, theme::background(), 0);
+    statusbar::applyTheme();
+
+    if (!s_appBuilt) return;
+
+    const AppId current = s_current;
+    hooksFor(current).destroy();
+    lv_obj_clean(s_content);
+    hooksFor(current).create(s_content);
 }
 
-int32_t contentHeight() {
-    return lv_display_get_vertical_resolution(lv_display_get_default()) - statusbar::kHeight;
+IrcClient&    irc()   { return s_irc; }
+WeechatRelay& relay() { return s_relay; }
+
+ChatMode chatMode() {
+    return static_cast<ChatMode>(settings::getEnum("chat_mode"));
 }
 
-IrcClient& irc() { return s_irc; }
+bool relayMode() { return chatMode() == ChatMode::Relay; }
 
-void reconnectIrc() {
-    s_irc.disconnect("Reconnecting", false);
-    s_irc.connect();
-    toast("Reconnecting to IRC");
+void switchChatMode() {
+    if (relayMode()) {
+        // Empty quit message: the client substitutes the fixed signature.
+        s_irc.disconnect(String(), true);
+    } else {
+        s_relay.disconnect(true);
+    }
+
+    // The screen caches an index into whichever list was in use, and the two
+    // have nothing to do with each other.
+    s_relay.applySettings();
+    openApp(AppId::Irc);
+    if (s_appBuilt) {
+        hooksFor(AppId::Irc).destroy();
+        lv_obj_clean(s_content);
+        hooksFor(AppId::Irc).create(s_content);
+    }
+    maybeAutoConnect();
 }
 
 void toast(const String& text, uint32_t milliseconds) {
@@ -253,7 +319,7 @@ void toast(const String& text, uint32_t milliseconds) {
 
     s_toast = lv_obj_create(lv_layer_top());
     lv_obj_remove_style_all(s_toast);
-    lv_obj_set_style_bg_color(s_toast, lv_color_hex(theme::kSurfaceAlt), 0);
+    lv_obj_set_style_bg_color(s_toast, theme::surfaceAlt(), 0);
     lv_obj_set_style_bg_opa(s_toast, LV_OPA_90, 0);
     lv_obj_set_style_radius(s_toast, 6, 0);
     lv_obj_set_style_pad_all(s_toast, 8, 0);

@@ -97,15 +97,27 @@ const char* const kHelp[] = {
     "Messages: /msg t text  /query nick  /notice t text  /me action",
     "          /amsg text  /say text  /ctcp t verb",
     "User:     /nick n  /away [r]  /back  /whois n  /whowas n  /who m  /ison n",
+    "          /ignore nick  /unignore nick  /ignores",
     "Server:   /connect  /server host [port]  /disconnect  /reconnect  /quit [m]",
     "Client:   /settings  /channels  /raw line  /help",
     "Anything else is sent to the server as typed, e.g. /lusers or /motd.",
     nullptr,
 };
 
+// Primary spellings only - the aliases are there to be typed, not suggested.
+const char* const kCommandNames[] = {
+    "amsg", "away", "back", "ban", "channels", "clear", "close", "connect",
+    "ctcp", "cycle", "deop", "devoice", "dehalfop", "disconnect", "halfop",
+    "help", "ignore", "ignores", "invite", "ison", "join", "kick", "kickban",
+    "list", "me", "mode", "msg", "names", "next", "nick", "notice", "op",
+    "part", "prev", "query", "quit", "raw", "reconnect", "say", "server",
+    "settings", "topic", "unban", "unignore", "voice", "who", "whois",
+    "whowas", "window", nullptr,
+};
+
 } // namespace
 
-const char* const* helpText() { return kHelp; }
+const char* const* commandNames() { return kCommandNames; }
 
 bool run(const String& line, const Context& context) {
     if (!line.startsWith("/")) return false;
@@ -167,13 +179,13 @@ bool run(const String& line, const Context& context) {
             }
             context.echo("Server set to " + host);
         }
-        client.disconnect(settings::getText("irc_quitmsg"), false);
+        client.disconnect(String(kIrcSignature), false);
         client.connect();
         return true;
     }
 
     if (matches(verb, {"disconnect"})) {
-        client.disconnect(rest.isEmpty() ? settings::getText("irc_quitmsg") : rest, true);
+        client.disconnect(rest.isEmpty() ? String(kIrcSignature) : rest, true);
         return true;
     }
     if (matches(verb, {"reconnect"})) {
@@ -182,7 +194,7 @@ bool run(const String& line, const Context& context) {
         return true;
     }
     if (matches(verb, {"quit", "exit"})) {
-        client.disconnect(rest.isEmpty() ? settings::getText("irc_quitmsg") : rest, true);
+        client.disconnect(rest.isEmpty() ? String(kIrcSignature) : rest, true);
         return true;
     }
 
@@ -205,7 +217,11 @@ bool run(const String& line, const Context& context) {
     if (matches(verb, {"cycle", "hop"})) {
         const String channel = targetChannel(context, rest);
         if (channel.isEmpty()) { context.echo("Not a channel window"); return true; }
-        const String key = window ? window->key : String();
+        // The key of the channel being cycled, not of whatever window this
+        // was typed in: /cycle #other from elsewhere used to re-join #other
+        // with this window's key and then save that wrong key to the list.
+        const IrcBuffer* cycling = client.findBuffer(channel);
+        const String key = cycling ? cycling->key : String();
         client.sendRaw("PART " + channel + " :cycling");
         client.join(channel, key);
         return true;
@@ -418,6 +434,48 @@ bool run(const String& line, const Context& context) {
     if (matches(verb, {"ison"})) {
         if (rest.isEmpty()) { context.echo("Usage: /ison <nick> [nick...]"); return true; }
         client.sendRaw("ISON " + rest);
+        return true;
+    }
+
+    if (matches(verb, {"ignore", "unignore", "ignores", "ignorelist"})) {
+        std::vector<String> list = irc::splitList(settings::getText("irc_ignore"));
+        const bool listOnly = verb == "ignores" || verb == "ignorelist";
+
+        const String who = listOnly ? String() : takeWord(rest);
+        if (listOnly || who.isEmpty()) {
+            if (list.empty()) { context.echo("Ignore list is empty"); return true; }
+            context.echo("Ignoring " + String(list.size()) + ":");
+            for (const String& entry : list) context.echo("  " + entry);
+            return true;
+        }
+
+        // Removing happens either way: adding an entry that is already there
+        // should not end up storing it twice.
+        bool wasListed = false;
+        for (size_t i = 0; i < list.size();) {
+            if (irc::equalsIgnoreCaseIrc(list[i], who)) {
+                list.erase(list.begin() + i);
+                wasListed = true;
+            } else {
+                i++;
+            }
+        }
+
+        if (verb == "unignore") {
+            if (!wasListed) { context.echo(who + " was not on the ignore list"); return true; }
+            context.echo("No longer ignoring " + who);
+        } else {
+            list.push_back(who);
+            context.echo("Ignoring " + who);
+        }
+
+        String joined;
+        for (size_t i = 0; i < list.size(); i++) {
+            if (i) joined += ",";
+            joined += list[i];
+        }
+        settings::setText("irc_ignore", joined);
+        client.applySettings();
         return true;
     }
 

@@ -4,24 +4,17 @@
 #include <Arduino.h>
 #include <esp_system.h>
 #include <esp_task_wdt.h>
-#include <esp_system.h>
-#include <esp_task_wdt.h>
-#include <SPI.h>
 #include <lvgl.h>
 
 #include "board/Audio.h"
-#include "board/Ble.h"
 #include "board/Display.h"
-#include "board/Gps.h"
 #include "board/Input.h"
 #include "board/Power.h"
-#include "board/Radio.h"
 #include "board/pins.h"
 #include "core/Log.h"
 #include "core/Settings.h"
 #include "net/WifiService.h"
 #include "ui/BootLogo.h"
-#include "ui/Theme.h"
 #include "ui/Ui.h"
 
 namespace {
@@ -81,11 +74,12 @@ void drawBootLogo() {
     s_logoShownAt = millis();
 }
 
-// Everything on the shared SPI2 bus has to be deselected before the bus is
-// used, or a device with a floating chip-select will sample traffic meant for
-// another one as its own commands. The LoRa radio matters most here: it is
-// disabled by default, so nothing else ever touches its CS line.
-void deselectSpiDevices() {
+// The SD card and the LoRa radio share SPI2 with the display and neither is
+// used by this firmware, but their chip-selects still float. A floating CS
+// lets a device sample traffic meant for the panel as its own commands, so
+// both are parked high once and then left alone - that is the whole extent of
+// this firmware's dealings with either of them.
+void parkUnusedSpiDevices() {
     pinMode(BOARD_SDCARD_CS, OUTPUT);
     digitalWrite(BOARD_SDCARD_CS, HIGH);
 
@@ -121,11 +115,18 @@ void setup() {
     logging::begin(115200);
     delay(150);
     const esp_reset_reason_t reason = esp_reset_reason();
-    LOG_I(TAG, "ACID DROP starting (last reset: %s)", resetReasonName(reason));
+    LOG_I(TAG, "ACID DROP %s starting (last reset: %s)",
+          ACID_VERSION, resetReasonName(reason));
     if (reason == ESP_RST_PANIC || reason == ESP_RST_TASK_WDT ||
         reason == ESP_RST_INT_WDT || reason == ESP_RST_BROWNOUT) {
         LOG_E(TAG, "the previous run ended badly: %s", resetReasonName(reason));
     }
+
+    // Armed here, not at the end of setup: the device has frozen during boot,
+    // and a watchdog that only starts once boot has finished cannot see that.
+    esp_task_wdt_init(kWatchdogSeconds, true);
+    esp_task_wdt_add(nullptr);
+    LOG_I(TAG, "loop watchdog armed at %lus", (unsigned long)kWatchdogSeconds);
 
     // Peripheral power rail first; nothing else on the board answers without it.
     pinMode(BOARD_POWERON, OUTPUT);
@@ -137,24 +138,19 @@ void setup() {
     logging::setKeepHistory(settings::getBool("log_screen"));
 
     if (!display::begin()) {
-        LOG_E(TAG, "display init failed - halting");
-        while (true) delay(1000);
+        LOG_E(TAG, "display init failed - letting the watchdog restart us");
+        while (true) delay(1000);   // deliberately not fed
     }
 
     checkRecoveryKey();
     drawBootLogo();
 
-    // Park every chip-select on the shared bus. The SD card and the LoRa radio
-    // are both brought up lazily, so nothing else touches SPI during boot.
     bootStage("spi");
-    deselectSpiDevices();
+    parkUnusedSpiDevices();
 
     bootStage("power");   power::begin();
     bootStage("audio");   audio::begin();
     bootStage("input");   input::begin();
-    bootStage("gps");     gps::begin();
-    bootStage("lora");    radio::begin();
-    bootStage("bluetooth"); ble::begin();
     bootStage("wifi");    net::begin();
 
     bootStage("sound");
@@ -167,6 +163,7 @@ void setup() {
     const uint32_t splashMs = settings::getInt("splash_ms");
     const uint32_t splashCap = 20000;
     while (millis() - s_logoShownAt < splashCap) {
+        esp_task_wdt_reset();   // this wait is longer than the watchdog allows
         audio::loop();
         const bool minimumMet = millis() - s_logoShownAt >= splashMs;
         if (minimumMet && !audio::isPlaying()) break;
@@ -183,16 +180,6 @@ void setup() {
     bootStage("running");
     lv_refr_now(nullptr);
 
-    // Watch the loop task from here on. Anything that blocks it for longer
-    // than the timeout panics instead of hanging silently, and the reason is
-    // reported at the top of the next boot.
-    esp_task_wdt_init(kWatchdogSeconds, true);
-    esp_task_wdt_add(nullptr);
-    LOG_I(TAG, "loop watchdog armed at %lus", (unsigned long)kWatchdogSeconds);
-
-    esp_task_wdt_init(kWatchdogSeconds, true);
-    esp_task_wdt_add(nullptr);
-    LOG_I(TAG, "loop watchdog armed at %lus", (unsigned long)kWatchdogSeconds);
 
     LOG_I(TAG, "boot complete, %u KB heap free", ESP.getFreeHeap() / 1024);
 }
@@ -204,8 +191,6 @@ void loop() {
     input::loop();
     power::loop();
     audio::loop();
-    gps::loop();
-    radio::loop();
     net::loop();
 
     ui::loop();

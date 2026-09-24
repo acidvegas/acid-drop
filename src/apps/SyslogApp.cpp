@@ -63,7 +63,7 @@ void create(lv_obj_t* parent) {
 
     FormatOptions options;
     options.defaultFg = theme::text();
-    options.defaultBg = lv_color_hex(theme::kBackground);
+    options.defaultBg = theme::background();
 
     s_view.create(viewHost);
     s_view.setFont(&acid_mono_10);

@@ -14,6 +14,44 @@
 // scrollback small enough to sit in PSRAM and means a change of font, width or
 // colour setting just redraws - nothing has to be re-wrapped up front.
 
+// How a line should be coloured. Kept out of the text itself so filters like
+// "hide joins and parts" stay cheap.
+enum LineKind : uint8_t {
+    LINE_MESSAGE = 0,
+    LINE_ACTION,
+    LINE_NOTICE,
+    LINE_JOIN,
+    LINE_PART,
+    LINE_QUIT,
+    LINE_KICK,
+    LINE_NICK,
+    LINE_MODE,
+    LINE_TOPIC,
+    LINE_SERVER,
+    LINE_ERROR,
+    LINE_LOCAL,     // our own status text
+    LINE_RAW,
+};
+
+// A channel member. The status prefix is kept rather than stripped: it is what
+// orders the nick list, and NAMES is the only place the server tells us.
+struct IrcNick {
+    String name;
+    char   prefix = 0;   // ~ owner, & admin, @ op, % halfop, + voice, 0 none
+
+    // Lower sorts first. Anything unrecognised ranks with the regulars.
+    uint8_t rank() const {
+        switch (prefix) {
+            case '~': return 0;
+            case '&': return 1;
+            case '@': return 2;
+            case '%': return 3;
+            case '+': return 4;
+            default:  return 5;
+        }
+    }
+};
+
 struct TermLine {
     String   text;        // raw, still carrying mIRC/ANSI control codes
     uint32_t stamp;       // unix seconds, 0 when unknown
@@ -33,7 +71,6 @@ public:
     void clear();
 
     void setMaxLines(uint16_t lines);
-    uint16_t maxLines() const { return m_maxLines; }
 
     size_t    size() const       { return m_lines.size(); }
     TermLine& at(size_t index)   { return m_lines[index]; }
@@ -68,22 +105,16 @@ public:
     void setLineSpacing(int8_t extraPixels);
     void setTimestampMode(uint8_t mode);        // 0 none, 1 HH:MM, 2 HH:MM:SS
     void setFormatOptions(const FormatOptions& options);
-    void setWordWrap(bool enabled);
 
     // Scrolling is in display rows, not logical lines. Positive scrolls back
     // towards older text.
     void scrollRows(int32_t delta);
     void scrollToBottom();
-    void scrollPageUp();
-    void scrollPageDown();
     bool atBottom() const;
     bool atTop() const;      // nothing older left to scroll to
 
     void refresh();                              // re-wrap and redraw
 
-    uint16_t columns() const { return m_columns; }
-    uint16_t visibleRows() const { return m_visibleRows; }
-    const lv_font_t* font() const { return m_font; }
 
     lv_obj_t* object() const { return m_obj; }
 

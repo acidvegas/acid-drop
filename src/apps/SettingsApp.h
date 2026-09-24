@@ -4,10 +4,10 @@
 
 namespace settingsapp {
 
-// The Settings app shows everything that is not IRC; the IRC app opens the
-// same screen scoped to its own sections.
+// One settings screen for the whole device. The IRC sections come first, and
+// the screens that are not a list of values - channels, WiFi, the log, about -
+// are reachable from it as shortcut rows.
 void create(lv_obj_t* parent);
-void createIrc(lv_obj_t* parent);
 void destroy();
 void tick();
 

@@ -143,10 +143,11 @@ gen() {
     -o "$OUT/$name.c"
 }
 
+# Only the 6x14 face. The 9x20 one existed for a "Chat font size" setting that
+# is gone: it fitted about half as much backlog on a 320x240 panel, and its two
+# generated files were 2.3MB of source for a choice nobody wanted to make.
 mkdir -p "$OUT"
 genFallback 10 acid_fallback_10
-genFallback 15 acid_fallback_15
 gen 10 acid_mono_10 acid_fallback_10   # 6x14 cells -> 53x13 grid
-gen 15 acid_mono_15 acid_fallback_15   # 9x20 cells -> 35x9  grid
 
 echo "done"

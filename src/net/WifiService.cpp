@@ -3,9 +3,9 @@
 #include <esp_wifi.h>
 #include <time.h>
 
-#include "board/Gps.h"
 #include "core/Log.h"
 #include "core/Settings.h"
+#include "net/NetworkList.h"
 
 namespace net {
 
@@ -73,6 +73,13 @@ void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
             s_attempts  = 0;
             LOG_I(TAG, "connected to %s as %s",
                   WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
+
+            // Only a network that actually associated goes on the list, which
+            // is what makes it worth trusting as somewhere to fall back to.
+            netlist::remember(WiFi.SSID(),
+                              s_pendingPassword.isEmpty()
+                                  ? settings::getText("wifi_pass")
+                                  : s_pendingPassword);
             syncClock(true);
             if (onConnectionChanged) onConnectionChanged(true);
             break;
@@ -212,6 +219,40 @@ void setEnabled(bool enabled) {
 bool enabled()     { return s_enabled; }
 bool isConnected() { return s_connected; }
 
+// Applies a fixed address if one is configured, or hands the interface back
+// to DHCP if not. Called before every WiFi.begin(), because the setting can
+// change between attempts and a stale static address is worse than none.
+void applyAddressing() {
+    if (!settings::getBool("net_static")) {
+        // All-zero puts the interface back on DHCP.
+        WiFi.config(IPAddress(0, 0, 0, 0), IPAddress(0, 0, 0, 0), IPAddress(0, 0, 0, 0));
+        return;
+    }
+
+    IPAddress ip, gateway, mask, dns1, dns2;
+    const bool ok = ip.fromString(settings::getText("net_ip")) &&
+                    gateway.fromString(settings::getText("net_gw")) &&
+                    mask.fromString(settings::getText("net_mask"));
+
+    if (!ok) {
+        LOG_W(TAG, "static addressing is on but the address, gateway or mask "
+                   "is not a valid IP - falling back to DHCP");
+        WiFi.config(IPAddress(0, 0, 0, 0), IPAddress(0, 0, 0, 0), IPAddress(0, 0, 0, 0));
+        return;
+    }
+
+    // DNS is optional; an unset or malformed server is simply not passed.
+    const bool haveDns1 = dns1.fromString(settings::getText("net_dns1"));
+    const bool haveDns2 = dns2.fromString(settings::getText("net_dns2"));
+
+    if (haveDns1 && haveDns2)      WiFi.config(ip, gateway, mask, dns1, dns2);
+    else if (haveDns1)             WiFi.config(ip, gateway, mask, dns1);
+    else                           WiFi.config(ip, gateway, mask);
+
+    LOG_I(TAG, "static address %s gw %s", ip.toString().c_str(),
+          gateway.toString().c_str());
+}
+
 void connect(const String& ssid, const String& password, bool save) {
     if (!s_enabled) setEnabled(true);
 
@@ -227,6 +268,7 @@ void connect(const String& ssid, const String& password, bool save) {
     s_attempts  = 1;
     s_lastError = "";
     s_attemptAt = millis();
+    applyAddressing();
     WiFi.begin(ssid.c_str(), password.isEmpty() ? nullptr : password.c_str());
     s_nextRetryAt = millis() + 20000;
 }
@@ -296,8 +338,31 @@ void loop() {
     s_nextRetryAt = s_attemptAt + (retryMs > minimumGap ? retryMs : minimumGap);
 
     if (s_attempts < 255) s_attempts++;
-    LOG_I(TAG, "retrying %s (attempt %u)", ssid.c_str(), s_attempts);
-    WiFi.begin(ssid.c_str(), pass.isEmpty() ? nullptr : pass.c_str());
+
+    // After a few failures, move on to another network this device has
+    // actually joined before. Standing in a different building is the usual
+    // reason the saved one will not come up, and retrying it forever is no
+    // use there.
+    String tryingSsid = ssid;
+    String tryingPass = pass;
+
+    if (s_attempts > 3) {
+        netlist::SavedNetwork next;
+        if (netlist::nextAfter(ssid, next)) {
+            tryingSsid        = next.ssid;
+            tryingPass        = next.password;
+            s_pendingSsid     = next.ssid;
+            s_pendingPassword = next.password;
+            s_attempts        = 1;
+            settings::setText("wifi_ssid", next.ssid);
+            settings::setText("wifi_pass", next.password);
+            LOG_I(TAG, "giving up on %s, trying %s", ssid.c_str(), next.ssid.c_str());
+        }
+    }
+
+    LOG_I(TAG, "retrying %s (attempt %u)", tryingSsid.c_str(), s_attempts);
+    applyAddressing();
+    WiFi.begin(tryingSsid.c_str(), tryingPass.isEmpty() ? nullptr : tryingPass.c_str());
 }
 
 uint8_t connectAttempts() { return s_attempts; }
@@ -366,17 +431,9 @@ void applyTimezone() {
 }
 
 void syncClock(bool force) {
-    if (!s_connected) {
-        // No network, but a GNSS fix carries the time too.
-        const uint32_t fromGps = gps::unixTime();
-        if (fromGps > 0) {
-            timeval now{static_cast<time_t>(fromGps), 0};
-            settimeofday(&now, nullptr);
-            s_clockSynced = true;
-            LOG_I(TAG, "clock set from GNSS");
-        }
-        return;
-    }
+    // NTP is the only clock source now that the GNSS receiver is gone, so
+    // without a network there is nothing to sync from.
+    if (!s_connected) return;
 
     if (!settings::getBool("ntp_enable")) return;
     if (!force && s_lastSyncAt != 0 && millis() - s_lastSyncAt < 3600000UL) return;

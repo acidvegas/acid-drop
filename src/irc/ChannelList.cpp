@@ -16,6 +16,8 @@ constexpr const char* TAG       = "channels";
 constexpr const char* kNamespace       = "acidchan";
 constexpr const char* kLegacyNamespace = "aciddrop";
 constexpr const char* kKey             = "chanlist";
+constexpr const char* kFixupKey        = "fixup";      // one-time repairs
+constexpr uint8_t     kFixupVersion    = 2;
 constexpr const char* kLegacyKey       = "irc_chans";
 constexpr size_t      kMaxChannels = 32;
 
@@ -67,14 +69,27 @@ void begin() {
         } else {
             for (JsonObject entry : doc.as<JsonArray>()) {
                 IrcChannelConfig channel;
-                channel.name     = entry["n"].as<String>();
-                channel.key      = entry["k"].as<String>();
+                // Not as<String>(): ArduinoJson's ::String converter falls
+                // back to serializing the variant when it is not a string, so
+                // a *missing* field yields the four-character text "null"
+                // rather than an empty String (ConverterImpl.hpp, the
+                // convertFromJson(JsonVariantConst, ::String&) overload). The
+                // key is only written when it is non-empty, so every keyless
+                // channel loaded with a key of "null" and then tried to join
+                // with it. operator|(variant, const char*) tests the type
+                // first and hands back the default instead.
+                channel.name     = entry["n"] | "";
+                channel.key      = entry["k"] | "";
                 channel.autojoin = entry["a"] | true;
                 channel.retry    = entry["r"] | true;
                 if (!channel.name.isEmpty()) s_channels.push_back(channel);
             }
         }
     } else {
+        // A fresh list has nothing to repair, and stamping it now stops the
+        // migration running on the second boot against flags the user turned
+        // off themselves on the first.
+        prefs.putUChar(kFixupKey, kFixupVersion);
         prefs.end();
         seedFromLegacy();
         save();
@@ -82,12 +97,41 @@ void begin() {
         return;
     }
 
+    // One-time repair. An earlier part() cleared autojoin on the saved entry,
+    // so a channel parted once was silently never joined again - the flag was
+    // written by that bug, not chosen by the user, and it persists in NVS
+    // where shipping the fix alone cannot reach it.
+    const uint8_t fixup = prefs.getUChar(kFixupKey, 0);
+    bool repaired = false;
+    if (fixup < kFixupVersion) {
+        for (auto& channel : s_channels) {
+            if (!channel.autojoin) {
+                channel.autojoin = true;
+                repaired = true;
+                LOG_W(TAG, "re-enabled autojoin for %s (cleared by an old bug)",
+                      channel.name.c_str());
+            }
+            // The phantom key above did not stay in memory: once anything
+            // saved the list, the literal "null" was written to NVS as a real
+            // key, where correcting the read cannot reach it.
+            if (channel.key == "null") {
+                channel.key = String();
+                repaired = true;
+                LOG_W(TAG, "dropped the bogus 'null' key on %s",
+                      channel.name.c_str());
+            }
+        }
+        prefs.putUChar(kFixupKey, kFixupVersion);
+    }
+
     prefs.end();
+    if (repaired) save();
+
     LOG_I(TAG, "%u channels loaded", (unsigned)s_channels.size());
     for (const auto& channel : s_channels) {
-        LOG_I(TAG, "  %s autojoin=%d retry=%d key=%s",
+        LOG_I(TAG, "  %s autojoin=%d retry=%d key='%s'",
               channel.name.c_str(), channel.autojoin ? 1 : 0, channel.retry ? 1 : 0,
-              channel.key.isEmpty() ? "-" : "set");
+              channel.key.c_str());
     }
 }
 
@@ -131,20 +175,18 @@ void remove(size_t index) {
     save();
 }
 
-void moveUp(size_t index) {
-    if (index == 0 || index >= s_channels.size()) return;
-    std::swap(s_channels[index - 1], s_channels[index]);
-    save();
-}
-
 void rememberJoin(const String& name, const String& key) {
     if (IrcChannelConfig* existing = find(name)) {
         // Joining a channel by hand is as clear a statement of intent as
         // adding it to the list, so it goes back on autojoin. Parting clears
         // that flag, and without this a channel could never get back on the
         // list once it had been parted once.
+        // Unconditional, including clearing it: this is only ever reached from
+        // an explicit join, so the key given there is the truth. Skipping the
+        // empty case meant a wrong key could never be removed, and it was then
+        // sent on every autojoin thereafter.
         bool changed = false;
-        if (!key.isEmpty() && existing->key != key) {
+        if (existing->key != key) {
             existing->key = key;
             changed = true;
         }

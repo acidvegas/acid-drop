@@ -230,6 +230,20 @@ void parseAnsiSgr(const String& text, int& i, const FormatOptions& opt, PenState
 
 } // namespace
 
+uint8_t nickColorIndex(const String& nick) {
+    // Skip white, black and the two greys so nicks stay readable on black.
+    static const uint8_t kPalette[] = {2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13};
+    const uint8_t count = sizeof(kPalette) / sizeof(kPalette[0]);
+
+    // FNV-1a.
+    uint32_t hash = 2166136261u;
+    for (unsigned int i = 0; i < nick.length(); i++) {
+        hash ^= static_cast<uint8_t>(tolower(nick[i]));
+        hash *= 16777619u;
+    }
+    return kPalette[hash % count];
+}
+
 lv_color_t mircColor(uint8_t index, lv_color_t fallback) {
     if (index >= 99) return fallback;
     return fromRgb24(kMirc[index]);

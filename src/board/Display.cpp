@@ -160,7 +160,10 @@ bool begin() {
     }
 
     // "Upside down" is the same landscape axis rotated a half turn.
-    gfx.setRotation(settings::getEnum("rotation") == 1 ? 3 : 1);
+    // Fixed landscape. The panel is mounted one way in the T-Deck's case and
+    // the keyboard is underneath it, so an upside-down mode was never a real
+    // choice - it just gave people a way to make the device unusable.
+    gfx.setRotation(1);
     gfx.setBrightness(0);   // Stay dark until the first frame is drawn
     gfx.fillScreen(0x0000);
 
@@ -217,10 +220,6 @@ bool begin() {
 void setBrightness(uint8_t value) {
     s_brightness = value;
     if (s_awake) gfx.setBrightness(value);
-}
-
-uint8_t brightness() {
-    return s_brightness;
 }
 
 void sleep() {

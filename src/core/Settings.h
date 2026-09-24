@@ -14,6 +14,7 @@ enum class SettingType : uint8_t {
     Float,
     Text,
     Enum,
+    Color,   // stored as 0xRRGGBB in the same int the numbers use
 };
 
 struct SettingDef {
@@ -39,6 +40,7 @@ struct SettingDef {
 
     bool         secret;        // render masked, omit from plaintext export
     bool         needsRestart;  // flag the row in the UI
+    bool         hidden;        // persisted state, but never shown as a row
 };
 
 namespace settings {
@@ -50,17 +52,6 @@ void begin();
 
 const std::vector<SettingDef>& defs();
 const SettingDef*              find(const char* key);
-
-// Settings are grouped so each owner can present its own. The IRC app shows
-// the "irc" group; the Settings app shows everything else.
-constexpr const char* kGroupSystem = "system";
-constexpr const char* kGroupIrc    = "irc";
-
-const char* groupOf(const char* section);
-
-// Sections belonging to `group`, in registry order. Passing nullptr returns
-// every section.
-std::vector<const char*> sections(const char* group = nullptr);
 
 // Reads. An unknown key returns the type's zero value and logs an error.
 bool    getBool(const char* key);
@@ -80,19 +71,12 @@ void setEnum(const char* key, uint8_t index);
 
 // Generic access, used by the settings UI and the JSON codec.
 String  getAsString(const char* key);
-void    setFromString(const char* key, const String& value);
 
-void resetToDefault(const char* key);
-void resetSection(const char* section);
 void factoryReset();   // wipes NVS entirely; caller should reboot
 
 // Listeners fire after the value has been persisted. `key` is the stable
 // pointer from the registry, so listeners can compare with ==, but strcmp is
 // clearer and just as cheap here.
 void onChange(ChangeCb cb);
-
-// Config import/export. The SD card is mounted by the caller.
-bool exportJson(const String& path, bool includeSecrets);
-bool importJson(const String& path);
 
 } // namespace settings
